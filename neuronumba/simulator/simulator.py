@@ -33,6 +33,7 @@ class Simulator(HasAttr):
     def run(self, t_start=0, t_end=10000, stimulus=None):
         assert self.connectivity, "No connectivity defined for simulation!"
 
+        self.integrator.configure()
         dt = self.integrator.dt
         t_max = t_end - t_start
         n_steps = int((t_end - t_start) / dt)
