@@ -34,12 +34,16 @@ class Simulator(HasAttr):
         assert self.connectivity, "No connectivity defined for simulation!"
 
         self.integrator.configure()
+        self.coupling.configure()
+        self.connectivity.configure()
+        self.model.configure()
+
         dt = self.integrator.dt
         t_max = t_end - t_start
+
         n_steps = int((t_end - t_start) / dt)
-        n_rois = self.connectivity.weights.shape[0]
+        n_rois = self.connectivity.n_rois
         state = self.model.initial_state(n_rois)
-        self.coupling.init(dt, state)
         self._state_shape = (int(self.model.n_state_vars), n_rois)
 
         for m in self.monitors:
@@ -49,6 +53,8 @@ class Simulator(HasAttr):
         c_update = self.coupling.get_numba_update()
         i_scheme = self.integrator.get_numba_scheme(self.model.dfun)
         m_sample = self.monitors[0].get_numba_sample()
+
+        c_update(0, state)
 
         @njit(void(intc,  # n_steps
                    f8[:, :],  # state
