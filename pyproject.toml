@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools==69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neuronumba"
+version = "2024.0.0"
+dependencies = [
+  "numpy",
+  "nptyping",
+  "numba",
+  "scipy",
+  "enum",
+  "inspect",
+]
+requires-python = ">=3.8"
+authors = [
+  {name = "Ignacio Martín", email = "natx.mc@gmail.com"}
+]
+maintainers = [
+  {name = "Ignacio Martín", email = "natx.mc@gmail.com"}
+]
+description = "Whole Brain Simulation with Python and Numba"
+readme = "README.md"
+license = {file = "LICENSE"}
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python"
+]
