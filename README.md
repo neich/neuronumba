@@ -82,4 +82,9 @@ if __name__ == '__main__':
     distance = measure.distance(processed, simulated)
 ```
 
+## Installation
+
+The package is not in the pip repository, but temporarily you can install it with:
+
+`pip install neuronumba@git+https://github.com/neich/neuronumba`
 
