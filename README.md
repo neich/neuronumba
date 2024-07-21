@@ -25,19 +25,16 @@ A simple exemple of these three steps looks like this:
 ```python
 import numpy as np
 
-from neuronumba.bold.filters import BandPassFilter
-from neuronumba.observables.measures import KolmogorovSmirnovStatistic
-from neuronumba.observables.ph_fcd import PhFCD
-from neuronumba.simulator.bold.stephan_2008 import Bold_Stephan2008
 from neuronumba.simulator.connectivity import Connectivity
-from neuronumba.simulator.coupling import CouplingLinearDense, CouplingLinearNoDelays
-from neuronumba.simulator.integrators import EulerDeterministic
 from neuronumba.simulator.models import Naskar
-from neuronumba.simulator.monitors import TemporalAverage, RawMonitor, RawSubSample
+from neuronumba.simulator.integrators import EulerDeterministic
+from neuronumba.simulator.coupling import CouplingLinearNoDelays
+from neuronumba.simulator.monitors import RawSubSample
 from neuronumba.simulator.simulator import Simulator
-
-
-def run(weights, processed):
+from neuronumba.bold import BoldStephan2008
+from neuronumba.bold.filters import BandPassFilter
+from neuronumba.observables.ph_fcd import PhFCD
+from neuronumba.observables.measures import KolmogorovSmirnovStatistic
 
 
 if __name__ == '__main__':
@@ -45,33 +42,33 @@ if __name__ == '__main__':
     processed = np.load('your_empirical_preprocessed_measure.npy')
 
     n_rois = weights.shape[0]
-    
+
     # We create a "fake" length matrix since we are simulating with no delays
-    lengths = np.random.rand(n_rois, n_rois)*10.0 + 1.0
+    lengths = np.random.rand(n_rois, n_rois) * 10.0 + 1.0
     speed = 1.0
-    
+
     # Initialize connectivity
     con = Connectivity(weights=weights, lengths=lengths, speed=speed)
 
     # Create the model
     m = Naskar()
-    
+
     # Initialize the integrator
     dt = 0.1
     integ = EulerDeterministic(dt=dt)
-    
+
     # Initialize the coupling, in this case linear with no delays
     coupling = CouplingLinearNoDelays(weights=weights, c_vars=np.array([0], dtype=np.int32), n_rois=n_rois)
 
     # Create a monitor that subsample the signal each 1ms
     monitor = RawSubSample(period=1.0, dt=dt)
-    
+
     # Initialize the simulator and run
     s = Simulator(connectivity=con, model=m, coupling=coupling, integrator=integ, monitors=[monitor])
     s.run(0, 100000)
 
     # Generate BOLD signal from monitor data
-    b = Bold_Stephan2008()
+    b = BoldStephan2008()
     signal = monitor.data()[:, 0, :]
     bold = b.compute_bold(signal, monitor.period)
 
