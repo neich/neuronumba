@@ -2,11 +2,9 @@ from numba import float64, njit
 from numba.experimental import jitclass
 import numpy as np
 import numpy.typing as npt
-from numba_stats import norm
 
 from neuronumba.basic.attr import HasAttr, Attr
 from neuronumba.numba_tools.types import ArrF8_2d, ArrF8_1d
-from neuronumba.simulator.integrators.base_integrator import Integrator__init__
 import neuronumba.simulator.noise as nn_noise
 
 
