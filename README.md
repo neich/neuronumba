@@ -54,11 +54,10 @@ if __name__ == '__main__':
     m = Naskar()
 
     # Initialize the integrator
-    dt = 0.1
-    integ = EulerDeterministic(dt=dt)
+    integ = EulerDeterministic(dt=0.1)
 
     # Initialize the coupling, in this case linear with no delays
-    coupling = CouplingLinearNoDelays(weights=weights, c_vars=np.array([0], dtype=np.int32), n_rois=n_rois)
+    coupling = CouplingLinearNoDelays(weights=weights, c_vars=np.array([0], dtype=np.int32))
 
     # Create a monitor that subsamples the signal each 1ms
     monitor = RawSubSample(period=1.0)
