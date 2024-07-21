@@ -60,8 +60,8 @@ if __name__ == '__main__':
     # Initialize the coupling, in this case linear with no delays
     coupling = CouplingLinearNoDelays(weights=weights, c_vars=np.array([0], dtype=np.int32), n_rois=n_rois)
 
-    # Create a monitor that subsample the signal each 1ms
-    monitor = RawSubSample(period=1.0, dt=dt)
+    # Create a monitor that subsamples the signal each 1ms
+    monitor = RawSubSample(period=1.0)
 
     # Initialize the simulator and run
     s = Simulator(connectivity=con, model=m, coupling=coupling, integrator=integ, monitors=[monitor])
