@@ -58,7 +58,8 @@ if __name__ == '__main__':
     integ = EulerDeterministic(dt=0.1)
 
     # Initialize the coupling, in this case linear with no delays
-    coupling = CouplingLinearNoDelays(weights=weights, c_vars=np.array([0], dtype=np.int32))
+    observed_state_var = 0
+    coupling = CouplingLinearNoDelays(weights=weights, c_vars=np.array([observed_state_var], dtype=np.int32))
 
     # Create a monitor that subsamples the signal each 1ms
     monitor = RawSubSample(period=1.0)
@@ -69,7 +70,7 @@ if __name__ == '__main__':
 
     # Generate BOLD signal from monitor data
     b = BoldStephan2008()
-    signal = monitor.data()[:, 0, :]
+    signal = monitor.data()[:, observed_state_var, :]
     bold = b.compute_bold(signal, monitor.period)
 
     # Generate measure data from BOLD signal and compare with empirical
