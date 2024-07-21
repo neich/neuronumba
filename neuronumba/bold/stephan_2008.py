@@ -20,10 +20,10 @@ import numpy as np
 from numba import njit
 
 from neuronumba.basic.attr import Attr
-from neuronumba.simulator.bold.base_bold import Bold
+from neuronumba.bold.base_bold import Bold
 
 
-class Bold_Stephan2008(Bold):
+class BoldStephan2008(Bold):
     kappa = Attr(default=0.65, required=False)  # 0.8;    # Rate of vasodilatory signal decay, time unit (s) [Friston2003], eta = Attr(default=0.64, required=False) in [Friston2019]
     gamma = Attr(default=0.41, required=False)  # 0.4;    # Rate of flow-dependent elimination, time unit (s)  [Friston2003], chi = Attr(default=0.32, required=False) in [Friston2019]
     tau = Attr(default=0.98, required=False)  # 1;      # mean transit time (s) in [Friston2003], 1/tau = Attr(default=2, required=False) in [Friston2019]
@@ -47,7 +47,7 @@ class Bold_Stephan2008(Bold):
     atol = Attr(default=1e-08, required=False)
 
     def compute_bold(self, signal, dt):
-        # @njit
+        @njit
         def Bold_Stephan2008_compute_bold(total_time, signal):
             # The Hemodynamic model with one simplified neural activity
             #
