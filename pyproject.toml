@@ -9,9 +9,7 @@ dependencies = [
   "numpy",
   "nptyping",
   "numba",
-  "scipy",
-  "enum",
-  "inspect",
+  "scipy"
 ]
 requires-python = ">=3.8"
 authors = [
