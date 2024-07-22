@@ -1,4 +1,4 @@
-from numba import njit
+from numba import njit, f8, intc
 
 from neuronumba.basic.attr import HasAttr, Attr
 from neuronumba.observables import measures
@@ -11,12 +11,16 @@ class PhFCD(HasAttr):
     discard_offset = Attr(default=10, required=False)
 
     def from_fmri(self, ts):  # Compute the FCD of an input BOLD signal
-        pim_matrix = phase_interaction_matrix(ts)  # Compute the Phase-Interaction Matrix
-        return PhFCD_from_fmri(ts, self.discard_offset, pim_matrix)
+        """
 
-@njit
-def PhFCD_from_fmri(ts, discard_offset, pim_matrix):
-    (t_max, n_rois) = ts.shape
+        :param ts: bold signal with shape (n_rois, n_time_samples)
+        :return:
+        """
+        pim_matrix = phase_interaction_matrix(ts)  # Compute the Phase-Interaction Matrix
+        return PhFCD_from_fmri(ts.shape[0], ts.shape[1], self.discard_offset, pim_matrix)
+
+
+def PhFCD_from_fmri(n_rois, t_max, discard_offset, pim_matrix):
     # calculates the size of phfcd vector
     npattmax = t_max - (2 * discard_offset - 1)
     # The int() is not needed because N*(N-1) is always even, but "it will produce an error in the future"...
@@ -24,20 +28,17 @@ def PhFCD_from_fmri(ts, discard_offset, pim_matrix):
     # Indices of triangular lower part of matrix
     # Isubdiag = tril_indices_column(n_rois, k=-1)
     # The int() is not needed, but... (see above)
-    phIntMatr_upTri = np.zeros((npattmax, int(n_rois * (n_rois - 1) / 2)))
+    pim_up_tri = np.zeros((npattmax, int(n_rois * (n_rois - 1) / 2)))
+    row_i, col_i = np.nonzero(np.tril(np.ones(n_rois), k=-1).T)  # Matlab works in column-major order, while Numpy works in row-major.
+    i_subdiag = (col_i, row_i)  # Thus, I have to do this little trick: Transpose, generate the indices, and then "transpose" again...
     for t in range(npattmax):
-        i = 0
-        for r in range(n_rois):
-            for c in range(r+1, n_rois):
-                phIntMatr_upTri[t, i] = pim_matrix[t, r, c]
-                i += 1
+        pim_up_tri[t, :] = pim_matrix[t][i_subdiag]
 
-    phfcd = numba_phFCD(phIntMatr_upTri, npattmax, size_kk3)
+    return PhFCD_from_fmri_numba(size_kk3, npattmax, pim_up_tri)
 
-    return phfcd
 
-@njit
-def numba_phFCD(pim_up_tri, npattmax, size_kk3):
+@njit(f8[:](intc, intc, f8[:, :]))
+def PhFCD_from_fmri_numba(size_kk3, npattmax, pim_up_tri):
     phfcd = np.zeros((size_kk3))
     kk3 = 0
 
@@ -51,4 +52,5 @@ def numba_phFCD(pim_up_tri, npattmax, size_kk3):
             dot_product = np.dot(p1_sum, p2_sum)
             phfcd[kk3] = dot_product / (p1_norm * p2_norm)
             kk3 += 1
+
     return phfcd
