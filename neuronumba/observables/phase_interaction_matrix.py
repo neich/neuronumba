@@ -1,4 +1,4 @@
-from numba import njit
+from numba import njit, f8, intc
 import numpy as np
 from scipy import signal
 from scipy.signal import detrend
@@ -14,16 +14,23 @@ def adif(a, b):
 
 
 def phase_interaction_matrix(ts, discard_offset=10):
-    phases = np.empty((ts.shape[1], ts.shape[0]))
-    for n in range(ts.shape[1]):
-        sd = detrend(ts[:, n], type='constant')
+    """
+
+    :param ts: signal with shape (n_rois, n_time_samples)
+    :param discard_offset:
+    :return:
+    """
+    phases = np.empty(ts.shape)
+    for n in range(ts.shape[0]):
+        sd = ts[n, :] - np.mean(ts[n, :])
         Xanalytic = signal.hilbert(sd)
         phases[n, :] = np.angle(Xanalytic)
     return _phase_interaction_matrix(ts, phases, discard_offset)
 
-@njit
+
+@njit(f8[:, :, :](f8[:, :], f8[:, :], intc))
 def _phase_interaction_matrix(ts, phases, discard_offset=10):
-    (t_max, n_rois) = ts.shape
+    n_rois, t_max = ts.shape
     npattmax = t_max - (2 * discard_offset - 1)  # calculates the size of phfcd matrix
     # Data structures we are going to need...
     d_fc = np.zeros((n_rois, n_rois))
