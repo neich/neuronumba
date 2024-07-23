@@ -16,12 +16,11 @@ class Monitor(HasAttr):
 
 
 class RawMonitor(Monitor):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.buffer = []
 
-    def configure(self, **kwargs):
-        super().configure(**kwargs)
+    buffer = Attr(dependant=True)
+
+    def _init_dependant(self):
+        super()._init_dependant()
         self.buffer = []
 
     def sample(self, step, state):
@@ -69,14 +68,12 @@ class RawSubSample(Monitor):
 
 
 class TemporalAverage(Monitor):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.n_interim_samples = None
-        self.buffer = None
-        self.interim_buffer = None
+    n_interim_samples = Attr(dependant=True)
+    buffer = Attr(dependant=True)
+    interim_buffer = Attr(dependant=True)
 
-    def configure(self, shape, **kwargs):
-        super().configure(**kwargs)
+    def _init_dependant(self):
+        super()._init_dependant()
         self.n_interim_samples = int(self.period / self.dt)
         self.interim_buffer = np.zeros((self.n_interim_samples, shape[0], shape[1]))
 
