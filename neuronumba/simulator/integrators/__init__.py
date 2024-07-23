@@ -1,1 +1,1 @@
-from neuronumba.simulator.integrators.euler import EulerMaruyama, EulerDeterministic
+from neuronumba.simulator.integrators.euler import EulerDeterministic, EulerStochastic
