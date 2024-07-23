@@ -7,21 +7,33 @@ from neuronumba.numba_tools import address_as_void_pointer
 from neuronumba.numba_tools.types import ArrF8_2d
 
 
-class CouplingLinearDense(object):
-    
-    def __init__(self, weights, delays, c_vars, n_rois):
-        self.weights = weights
-        self.delays = delays
-        self.c_vars = c_vars
-        self.n_cvars = np.array(c_vars, dtype=int32)
-        self.n_rois = n_rois
+class Coupling(HasAttr):
+    weights = Attr(default=None, required=True)
+    # Array with indices of state variables to couple
+    c_vars = Attr(default=None, required=True)
+    n_cvars = Attr(default=None, required=False, dependant=True)
+    n_rois = Attr(default=None, required=False, dependant=True)
 
-    def init(self, dt, init_state):
-        self.dt = dt
+    def _init_dependant(self):
+        self.c_vars = np.array(self.c_vars, dtype=np.int32)
+        self.n_cvars = self.c_vars.shape[0]
+        self.n_rois = self.weights.shape[0]
+
+
+class CouplingLinearDense(Coupling):
+
+    # Global linear coupling
+    g = Attr(default=None, required=True)
+    delays = Attr(default=None, required=True)
+
+    i_delays = Attr(dependant=True)
+    buffer = Attr(dependant=True)
+    n_time = Attr(dependant=True)
+
+    def _init_dependantt(self):
         self.i_delays = np.rint(self.delays / dt).astype(np.int32)
         self.n_time = np.max(self.i_delays) + 1
         self.buffer = np.zeros((len(self.c_vars), self.n_time, self.n_rois))
-        self.update(0, init_state)
 
     def update(self, step, state):
         self.buffer[:, step % self.n_time, :] = state[self.c_vars]
@@ -57,24 +69,17 @@ def CouplingLinearDense_couple(step, buffer, n_time, weights, i_delays, c_vars, 
     return result
 
 
-class CouplingLinearNoDelays(HasAttr):
+class CouplingLinearNoDelays(Coupling):
 
-    # Connectivity matrix
-    weights = Attr(default=None, required=True)
-    # Array with indices of state variables to couple
-    c_vars = Attr(default=None, required=True)
     # Global linear coupling
     g = Attr(default=None, required=True)
 
-    delays = Attr(default=None, required=False, dependant=True)
-    n_cvars = Attr(default=None, required=False, dependant=True)
-    n_rois = Attr(default=None, required=False, dependant=True)
-    buffer = Attr(default=None, required=False, dependant=True)
+    n_cvars = Attr(dependant=True)
+    n_rois = Attr(dependant=True)
+    buffer = Attr(dependant=True)
 
     def _init_dependant(self):
-        self.c_vars = np.array(self.c_vars, dtype=np.int32)
-        self.n_cvars = len(self.c_vars)
-        self.n_rois = self.weights.shape[0]
+        super()._init_dependant()
         self.buffer = np.zeros((1, self.n_cvars, self.n_rois), dtype=np.float64)
 
     def get_numba_couple(self):
@@ -108,9 +113,5 @@ class CouplingLinearNoDelays(HasAttr):
                              dtype=buffer.dtype)
             for i in range(n_cvars):
                 data[0, i, :] = state[c_vars[i], :]
-
-        # def c_update(step, state):
-        #     for i in range(n_cvars):
-        #         buffer[0, i, :] = state[c_vars[i], :]
 
         return c_update
