@@ -9,26 +9,16 @@ from neuronumba.numba_tools.types import ArrF8_2d, ArrF8_1d
 
 
 class Simulator(HasAttr):
-    connectivity = Attr(
-        default=None,
-        required=True)
 
-    model = Attr(
-        default=None,
-        required=True)
+    connectivity = Attr(required=True)
 
-    integrator = Attr(
-        default=None,
-        required=True)
+    model = Attr(required=True)
 
-    coupling = Attr(
-        default=None,
-        required=True)
+    integrator = Attr(required=True)
 
-    monitors = Attr(
-        default=None,
-        required=True
-    )
+    coupling = Attr(required=True)
+
+    monitors = Attr(required=True)
 
     def run(self, t_start=0, t_end=10000, stimulus=None):
         assert self.connectivity, "No connectivity defined for simulation!"
