@@ -30,11 +30,13 @@ B_i = 18
 gamma = 19
 rho = 20
 
+
 class Naskar(Model):
 
     n_params = 21
     state_vars = ['S_e', 'S_i', 'J']
     n_state_vars = len(state_vars)
+    c_vars = [0]
 
     observable_vars = ['Ie', 're']
     n_observable_vars = len(observable_vars)
@@ -68,6 +70,17 @@ class Naskar(Model):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
+    @property
+    def get_state_vars(self):
+        return Naskar.state_vars
+
+    @property
+    def get_observablevars(self):
+        return Naskar.observable_vars
+
+    @property
+    def get_c_vars(self):
+        return Naskar.c_vars
 
     def _init_dependant(self):
         self.m = np.empty(Naskar.n_params)
