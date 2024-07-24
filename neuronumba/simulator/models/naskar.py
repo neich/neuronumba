@@ -138,8 +138,5 @@ class Naskar(Model):
 
         return Naskar_dfun
 
-    @property
-    def data(self):
-        return self.m
 
 
