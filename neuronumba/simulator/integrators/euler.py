@@ -1,5 +1,5 @@
-from numba import float64, njit
 import numpy as np
+import numba as nb
 
 from neuronumba.basic.attr import HasAttr, Attr
 from neuronumba.numba_tools.types import ArrF8_2d, ArrF8_1d
@@ -12,13 +12,13 @@ class EulerDeterministic(Integrator):
         dt = self.dt
         stimulus = np.empty((1, 1))
 
-        @njit(float64[:, :](float64[:, :], float64[:], float64[:, :]))
-        def scheme(state: ArrF8_2d, model: ArrF8_1d, coupling: ArrF8_2d):
-            d_state = dfun(model, state, coupling)
+        @nb.njit(nb.types.UniTuple(nb.f8[:, :], 2)(nb.f8[:, :], nb.f8[:, :]))
+        def scheme(state: ArrF8_2d, coupling: ArrF8_2d):
+            d_state, observed = dfun(state, coupling)
             if stimulus.shape[1] == state.shape[1]:
                 d_state = d_state + stimulus
             next_state = state + dt * d_state
-            return next_state
+            return next_state, observed
 
         return scheme
 
@@ -37,9 +37,9 @@ class EulerStochastic(Integrator):
         sigmas = self.sigmas
         sqrt_dt = self._sqrt_dt
 
-        @njit(float64[:, :](float64[:, :], float64[:], float64[:, :]))
-        def scheme(state: ArrF8_2d, model: ArrF8_1d, coupling: ArrF8_2d):
-            d_state = dfun(model, state, coupling)
+        @nb.njit(nb.types.UniTuple(nb.f8[:, :], 2)(nb.f8[:, :], nb.f8[:, :]))
+        def scheme(state: ArrF8_2d, coupling: ArrF8_2d):
+            d_state, observed = dfun(state, coupling)
             if stimulus.shape[1] == state.shape[1]:
                 d_state = d_state + stimulus
             noise = np.zeros(state.shape)
@@ -49,6 +49,6 @@ class EulerStochastic(Integrator):
                     noise[i] = np.random.normal(loc=0.0, scale=sigmas[i], size=n_rois)
 
             next_state = state + dt * d_state + sqrt_dt * noise
-            return next_state
+            return next_state, observed
 
         return scheme

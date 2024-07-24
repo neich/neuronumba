@@ -1,8 +1,4 @@
-from typing import Any
-import numpy as np
-
-from numba import njit, void, intc, f8, i8
-from nptyping import NDArray, Shape
+import numba as nb
 
 from neuronumba.basic.attr import Attr, HasAttr
 from neuronumba.numba_tools.types import ArrF8_2d, ArrF8_1d
@@ -33,33 +29,32 @@ class Simulator(HasAttr):
 
         n_steps = int((t_end - t_start) / dt)
         n_rois = self.connectivity.n_rois
-        state = self.model.initial_state(n_rois)
+        init_state = self.model.initial_state(n_rois)
+        init_observed = self.model.initial_observed(n_rois)
         self._state_shape = (int(self.model.n_state_vars), n_rois)
 
         for m in self.monitors:
-            m.configure(shape=state.shape, dt=dt, t_max=t_max)
+            m.configure(dt=dt, t_max=t_max, n_rois=n_rois)
 
         c_couple = self.coupling.get_numba_couple()
         c_update = self.coupling.get_numba_update()
-        i_scheme = self.integrator.get_numba_scheme(self.model.dfun)
+        i_scheme = self.integrator.get_numba_scheme(self.model.get_numba_dfun())
         m_sample = self.monitors[0].get_numba_sample()
 
-        c_update(0, state)
+        c_update(0, init_state)
 
-        @njit(void(intc,  # n_steps
-                   f8[:, :],  # state
-                   f8[:],  # model
+        @nb.njit(nb.void(nb.intc,  # n_steps
+                   nb.f8[:, :],  # initial state variables
+                   nb.f8[:, :]  # initial observed variables
                    )
               )
-        def _sim_loop(n_steps: intc, state: ArrF8_2d, model: ArrF8_1d):
-            m_sample(0, state)
+        def _sim_loop(n_steps: nb.intc, state: ArrF8_2d, observed: ArrF8_2d):
+            m_sample(0, state, observed)
             for step in range(1, n_steps + 1):
                 cpl = c_couple(step)
-                new_state = i_scheme(state, model, cpl)
+                new_state, new_observed = i_scheme(state, cpl)
                 c_update(step, new_state)
+                m_sample(step, new_state, new_observed)
                 state = new_state
-                m_sample(step, state)
 
-        _sim_loop(n_steps,
-                  state,
-                  self.model.data)
+        _sim_loop(n_steps, init_state, init_observed)

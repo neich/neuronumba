@@ -1,6 +1,5 @@
 import numpy as np
 import numba as nb
-from numba import float64, intc, void
 
 from neuronumba.basic.attr import HasAttr, Attr
 from neuronumba.numba_tools import address_as_void_pointer
@@ -8,10 +7,28 @@ from neuronumba.numba_tools.types import ArrF8_2d
 
 
 class Monitor(HasAttr):
-    dt = Attr(default=None, required=True)
-    shape = Attr(default=None, required=True)
+    dt = Attr(required=True)
+    n_rois = Attr(required=True)
+    
+    state_vars = Attr(required=True)
+    obs_vars = Attr(required=True)
+    
+    n_state_vars = Attr(dependant=True)
+    n_obs_vars = Attr(dependant=True)
 
-    def sample(self, step, state):
+    def _init_dependant(self):
+        self.n_state_vars = len(self.state_vars)
+        self.n_obs_vars = len(self.obs_vars)
+        self.state_vars = np.array(self.state_vars, dtype=np.int32)
+        self.obs_vars = np.array(self.obs_vars, dtype=np.int32)
+
+    def sample(self, step, state, observed):
+        pass
+
+    def data_state(self):
+        pass
+
+    def data_observed(self):
         pass
 
 
@@ -23,7 +40,7 @@ class RawMonitor(Monitor):
         super()._init_dependant()
         self.buffer = []
 
-    def sample(self, step, state):
+    def sample(self, step, state, observed):
         self.buffer.append(state)
 
     def data(self):
@@ -34,35 +51,55 @@ class RawSubSample(Monitor):
     period = Attr(default=None, required=True)
     t_max = Attr(default=None, required=True)
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.n_interim_samples = 0
-        self.buffer = []
+    n_interim_samples = Attr(dependant=True)
+    buffer_state = Attr(dependant=True)
+    buffer_observed = Attr(dependant=True)
 
-    def configure(self, **kwargs):
-        super().configure(**kwargs)
-        self._check_required()
+    def _init_dependant(self):
+        super()._init_dependant()
         self.n_interim_samples = int(self.period / self.dt)
-        self.buffer = np.empty((1 + int(self.t_max / self.period), self.shape[0], self.shape[1]))
+        time_samples = 1 + int(self.t_max / self.period)
+        if self.n_state_vars:
+            self.buffer_state = np.empty((time_samples, self.n_state_vars, self.n_rois))
+        else:
+            self.buffer_state = np.empty(1,)
+        if self.n_obs_vars:
+            self.buffer_observed = np.empty((time_samples, self.n_obs_vars, self.n_rois))
+        else:
+            self.buffer_observed = np.empty(1,)
 
-    def sample(self, step, state):
-        if step % self.n_interim_samples == 0:
-            self.buffer[self.n_interim_samples] = state
-
-    def data(self):
-        return np.array(self.buffer)
+    def data_state(self):
+        return self.buffer_state
+    
+    def data_observed(self):
+        return self.buffer_observed
 
     def get_numba_sample(self):
-        buffer = self.buffer
-        addr = buffer.ctypes.data
-        n_interim_samples = intc(self.n_interim_samples)
+        buffer_state = self.buffer_state
+        addr_state = buffer_state.ctypes.data
+        state_vars = self.state_vars
+        n_state = nb.intc(self.n_state_vars)
+        buffer_observed = self.buffer_observed
+        addr_observed = buffer_observed.ctypes.data
+        obs_vars = self.obs_vars
+        n_obs = nb.intc(self.n_obs_vars)
+        n_interim_samples = nb.intc(self.n_interim_samples)
 
-        @nb.njit(void(intc, float64[:, :]))
-        def m_sample(step: intc, state: ArrF8_2d):
-            data = nb.carray(address_as_void_pointer(addr), buffer.shape,
-                             dtype=buffer.dtype)
+        @nb.njit(nb.void(nb.intc, nb.f8[:, :], nb.f8[:, :]))
+        def m_sample(step: nb.intc, state: ArrF8_2d, observed: ArrF8_2d):
             if step % n_interim_samples == 0:
-                data[intc(step / n_interim_samples)] = state
+                if n_state > 0:
+                    bnb_state = nb.carray(address_as_void_pointer(addr_state), buffer_state.shape,
+                                           dtype=buffer_state.dtype)
+                    i = nb.intc(step / n_interim_samples)
+                    for v in range(n_state):
+                        bnb_state[i, v, :] = state[state_vars[v], :]
+                if n_obs > 0:
+                    bnb_obs = nb.carray(address_as_void_pointer(addr_observed), buffer_observed.shape,
+                                           dtype=buffer_observed.dtype)
+                    i = nb.intc(step / n_interim_samples)
+                    for v in range(n_obs):
+                        bnb_obs[i, v, :] = observed[obs_vars[v], :]
 
         return m_sample
 
