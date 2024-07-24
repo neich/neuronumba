@@ -20,9 +20,9 @@ class Simulator(HasAttr):
         assert self.connectivity, "No connectivity defined for simulation!"
 
         self.integrator.configure()
-        self.coupling.configure()
         self.connectivity.configure()
         self.model.configure()
+        self.coupling.configure(c_vars=self.model.c_vars)
 
         dt = self.integrator.dt
         t_max = t_end - t_start
