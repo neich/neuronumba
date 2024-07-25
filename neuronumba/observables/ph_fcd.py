@@ -1,12 +1,12 @@
 from numba import njit, f8, intc
 
-from neuronumba.basic.attr import HasAttr, Attr
-from neuronumba.observables import measures
+from WholeBrain.Observables.observable import Observable
+from neuronumba.basic.attr import Attr
 from neuronumba.observables.phase_interaction_matrix import phase_interaction_matrix
 import numpy as np
 
 
-class PhFCD(HasAttr):
+class PhFCD(Observable):
 
     discard_offset = Attr(default=10, required=False)
 
