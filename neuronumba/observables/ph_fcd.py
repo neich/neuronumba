@@ -32,7 +32,7 @@ def PhFCD_from_fmri(n_rois, t_max, discard_offset, pim_matrix):
     return PhFCD_from_fmri_numba(size_kk3, npattmax, pim_up_tri)
 
 
-@nb.njit(f8[:](nb.intc, nb.intc, nb.f8[:, :]))
+@nb.njit(nb.f8[:](nb.intc, nb.intc, nb.f8[:, :]))
 def PhFCD_from_fmri_numba(size_kk3, npattmax, pim_up_tri):
     phfcd = np.zeros((size_kk3))
     kk3 = 0
