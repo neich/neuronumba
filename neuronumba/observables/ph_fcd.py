@@ -1,23 +1,18 @@
-from numba import njit, f8, intc
+import numpy as np
+import numba as nb
 
-from WholeBrain.Observables.observable import Observable
+from neuronumba.observables.base_observable import Observable
 from neuronumba.basic.attr import Attr
 from neuronumba.observables.phase_interaction_matrix import phase_interaction_matrix
-import numpy as np
 
 
 class PhFCD(Observable):
 
     discard_offset = Attr(default=10, required=False)
 
-    def from_fmri(self, ts):  # Compute the FCD of an input BOLD signal
-        """
-
-        :param ts: bold signal with shape (n_rois, n_time_samples)
-        :return:
-        """
-        pim_matrix = phase_interaction_matrix(ts)  # Compute the Phase-Interaction Matrix
-        return PhFCD_from_fmri(ts.shape[0], ts.shape[1], self.discard_offset, pim_matrix)
+    def _compute_from_fmri(self, bold_signal):  # Compute the FCD of an input BOLD signal
+        pim_matrix = phase_interaction_matrix(bold_signal)  # Compute the Phase-Interaction Matrix
+        return PhFCD_from_fmri(bold_signal.shape[0], bold_signal.shape[1], self.discard_offset, pim_matrix)
 
 
 def PhFCD_from_fmri(n_rois, t_max, discard_offset, pim_matrix):
@@ -37,7 +32,7 @@ def PhFCD_from_fmri(n_rois, t_max, discard_offset, pim_matrix):
     return PhFCD_from_fmri_numba(size_kk3, npattmax, pim_up_tri)
 
 
-@njit(f8[:](intc, intc, f8[:, :]))
+@nb.njit(f8[:](nb.intc, nb.intc, nb.f8[:, :]))
 def PhFCD_from_fmri_numba(size_kk3, npattmax, pim_up_tri):
     phfcd = np.zeros((size_kk3))
     kk3 = 0
