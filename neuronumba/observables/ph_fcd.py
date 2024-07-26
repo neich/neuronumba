@@ -48,4 +48,4 @@ def PhFCD_from_fmri_numba(size_kk3, npattmax, pim_up_tri):
             phfcd[kk3] = dot_product / (p1_norm * p2_norm)
             kk3 += 1
 
-    return {'phFDC': phfcd}
+    return {'phFCD': phfcd}
