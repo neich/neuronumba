@@ -124,9 +124,11 @@ class Naskar(Model):
         addr = self.m.ctypes.data
         m_shape = (Naskar.n_params,)
         m_dtype = self.m.dtype
+        m = self.m
 
         @nb.njit(nb.types.UniTuple(nb.f8[:, :], 2)(nb.f8[:, :], nb.f8[:, :]))
         def Naskar_dfun(state: ArrF8_2d, coupling: ArrF8_2d):
+            # Comment this line if you deactive @njit for debugging
             m = nb.carray(address_as_void_pointer(addr), m_shape, dtype=m_dtype)
 
             Se = state[0, :]
