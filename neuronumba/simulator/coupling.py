@@ -50,9 +50,11 @@ class CouplingLinearDense(Coupling):
         c_vars = self.c_vars
         n_cvars = self.n_cvars
         n_rois = self.n_rois
+        g = self.g
+
         @njit
         def c_couple(step):
-            return CouplingLinearDense_couple(step, buffer, n_time, weights, i_delays, c_vars, n_cvars, n_rois)
+            return g * CouplingLinearDense_couple(step, buffer, n_time, weights, i_delays, c_vars, n_cvars, n_rois)
 
         return c_couple
 
@@ -88,6 +90,7 @@ class CouplingLinearNoDelays(Coupling):
         weights = self.weights
         n_cvars = self.n_cvars
         n_rois = self.n_rois
+        g = self.g
 
         @njit(f8[:, :](intc))
         def c_couple(step: intc):
@@ -97,7 +100,7 @@ class CouplingLinearNoDelays(Coupling):
             for i in range(n_cvars):
                 r = weights @ data[0, i, :]
                 result[i, :] = r
-            return result
+            return result * g
 
         return c_couple
 
