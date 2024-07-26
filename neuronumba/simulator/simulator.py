@@ -43,18 +43,13 @@ class Simulator(HasAttr):
 
         c_update(0, init_state)
 
-        @nb.njit(nb.void(nb.intc,  # n_steps
-                   nb.f8[:, :],  # initial state variables
-                   nb.f8[:, :]  # initial observed variables
-                   )
-              )
+        @nb.njit(nb.void(nb.intc, nb.f8[:, :], nb.f8[:, :]))
         def _sim_loop(n_steps: nb.intc, state: ArrF8_2d, observed: ArrF8_2d):
-            m_sample(0, state, observed)
             for step in range(1, n_steps + 1):
                 cpl = c_couple(step)
                 new_state, new_observed = i_scheme(state, cpl)
                 c_update(step, new_state)
-                m_sample(step, new_state, new_observed)
+                m_sample(step-1, new_state, new_observed)
                 state = new_state
 
         _sim_loop(n_steps, init_state, init_observed)
