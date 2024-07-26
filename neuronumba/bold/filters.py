@@ -25,8 +25,9 @@ class BandPassFilter(HasAttr):
         # bfilt = bfilt_afilt[0]; afilt = bfilt_afilt[1]  # numba doesn't like unpacking...
         signal_filt = np.empty(signal.shape)
         for seed in range(n_rois):
-            if not np.isnan(signal[seed, :]).any():  # No problems, go ahead!!!
-                ts = signal[seed, :] - np.mean(signal[seed, :])
+            if not np.isnan(signal[seed, :]).any():
+                ts = detrend(signal[seed, :]) 
+                ts = ts - np.mean(ts)
 
                 if self.remove_artifacts:
                     ts[ts > 3. * np.std(ts)] = 3. * np.std(ts)  # Remove strong artefacts
