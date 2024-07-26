@@ -29,7 +29,7 @@ def PhFCD_from_fmri(n_rois, t_max, discard_offset, pim_matrix):
     for t in range(npattmax):
         pim_up_tri[t, :] = pim_matrix[t][i_subdiag]
 
-    return PhFCD_from_fmri_numba(size_kk3, npattmax, pim_up_tri)
+    return {'phFCD': PhFCD_from_fmri_numba(size_kk3, npattmax, pim_up_tri)}
 
 
 @nb.njit(nb.f8[:](nb.intc, nb.intc, nb.f8[:, :]))
@@ -48,4 +48,4 @@ def PhFCD_from_fmri_numba(size_kk3, npattmax, pim_up_tri):
             phfcd[kk3] = dot_product / (p1_norm * p2_norm)
             kk3 += 1
 
-    return {'phFCD': phfcd}
+    return phfcd
