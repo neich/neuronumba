@@ -47,6 +47,10 @@ class BoldStephan2008(Bold):
     atol = Attr(default=1e-08, required=False)
 
     def compute_bold(self, signal, dt):
+        @njit()
+        def isclose(a, b):
+            return np.absolute(a - b) <= (atol + rtol * np.absolute(b))
+
         @njit
         def Bold_Stephan2008_compute_bold(total_time, signal):
             # The Hemodynamic model with one simplified neural activity
@@ -115,7 +119,7 @@ class BoldStephan2008(Bold):
                 s[n + 1] = s[n] + dtt * (signal[n] - kappa * s[n] - gamma * (f[n] - 1))
                 # Equation (10) for f in [Stephan et al. 2007]. Now, changed to eq. A7 in [Stephan2008]
                 # Changes in blood flow f :
-                np.clip(f[n], 1, None)
+                f[n] = np.clip(f[n], 1, None)
                 ftilde[n + 1] = ftilde[n] + dtt * (s[n] / f[n])
                 # Equation (8)-1st for v in [Stephan et al. 2007]. Now, changed to eq. A8 in [Stephan2008]
                 # Changes in venous blood volume v:
@@ -126,7 +130,7 @@ class BoldStephan2008(Bold):
                 vtilde[n + 1] = vtilde[n] + dtt * ((f[n] - fv) / (tau * v[n]))
                 # Equation (8)-2nd for q in [Stephan et al. 2007]. Now, changed to eq. A9 in [Stephan2008]
                 # Changes in deoxyhemoglobin content q:
-                np.clip(q[n], 0.01, None)
+                q[n] = np.clip(q[n], 0.01, None)
                 ff = (1 - (1 - Eo) ** (1 / f[n])) / Eo  # oxygen extraction
                 qtilde[n + 1] = qtilde[n] + dtt * ((f[n] * ff - fv * q[n] / v[n]) / (tau * q[n]))
 
@@ -150,12 +154,14 @@ class BoldStephan2008(Bold):
             qq = q[n_min:n_t, :]
             # if isclose(vv, 0.).any():
             #    print("vv is close to 0 !!!")
-            # vv[isclose(vv, 0.)] = 1e-8
+            vv[isclose(vv, 0.)] = 1e-8
             b = vo * (k1 * (1 - qq) + k2 * (1 - qq / vv) + k3 * (1 - vv))  # Equation (12) in Stephan et al. 2007
 
             return b
 
 
+        atol = self.atol
+        rtol = self.rtol
         total_time = signal.shape[0] * dt
         kappa = self.kappa
         gamma = self.gamma
