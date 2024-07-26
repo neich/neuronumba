@@ -48,7 +48,7 @@ class BoldStephan2008(Bold):
 
     def compute_bold(self, signal, dt):
         @njit()
-        def isclose(a, b):
+        def is_close(a, b):
             return np.absolute(a - b) <= (atol + rtol * np.absolute(b))
 
         @njit
@@ -154,7 +154,7 @@ class BoldStephan2008(Bold):
             qq = q[n_min:n_t, :]
             # if isclose(vv, 0.).any():
             #    print("vv is close to 0 !!!")
-            vv[isclose(vv, 0.)] = 1e-8
+            # vv[is_close(vv, 0.)] = 1e-8
             b = vo * (k1 * (1 - qq) + k2 * (1 - qq / vv) + k3 * (1 - vv))  # Equation (12) in Stephan et al. 2007
 
             return b
