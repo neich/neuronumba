@@ -26,7 +26,7 @@ class BandPassFilter(HasAttr):
         signal_filt = np.empty(signal.shape)
         for seed in range(n_rois):
             if not np.isnan(signal[seed, :]).any():  # No problems, go ahead!!!
-                ts = signal[seed, :] - np.mean(signal[seed, :])  # Probably, we do not need to demean here, detrend already does the job...
+                ts = signal[seed, :] - np.mean(signal[seed, :])
 
                 if self.remove_artifacts:
                     ts[ts > 3. * np.std(ts)] = 3. * np.std(ts)  # Remove strong artefacts
