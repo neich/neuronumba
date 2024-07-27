@@ -2,4 +2,15 @@ from neuronumba.basic.attr import HasAttr
 
 
 class Model(HasAttr):
-    pass
+    @classmethod
+    def _build_var_dict(cls, var_list: list[str]):
+        return {v_name: index for index, v_name in enumerate(var_list)}
+
+    def get_state_sub(self, v_list: list[str] = None):
+        v_list = v_list or []
+        return {v: (self.state_vars[v], i) for i, v in enumerate(v_list)}
+
+    def get_observed_sub(self, v_list: list[str] = None):
+        v_list = v_list or []
+        return {v: (self.observable_vars[v], i) for i, v in enumerate(v_list)}
+

@@ -12,24 +12,41 @@ class Monitor(HasAttr):
     
     state_vars = Attr(required=True)
     obs_vars = Attr(required=True)
-    
+    state_vars_indices = Attr(dependant=True)
+    obs_vars_indices = Attr(dependant=True)
+
     n_state_vars = Attr(dependant=True)
     n_obs_vars = Attr(dependant=True)
 
     def _init_dependant(self):
-        self.n_state_vars = len(self.state_vars)
-        self.n_obs_vars = len(self.obs_vars)
-        self.state_vars = np.array(self.state_vars, dtype=np.int32)
-        self.obs_vars = np.array(self.obs_vars, dtype=np.int32)
+        # Extract index list from input dictionary
+        s_vars_i = [i for _, (i, _) in self.state_vars.items()]
+        o_var_i = [i for _, (i, _) in self.obs_vars.items()]
+
+        self.n_state_vars = len(s_vars_i)
+        self.n_obs_vars = len(o_var_i)
+        self.state_vars_indices = np.array(s_vars_i, dtype=np.int32)
+        self.obs_vars_indices = np.array(o_var_i, dtype=np.int32)
+
+    def data(self, var: str):
+        if var in self.state_vars:
+            return self._get_data_state(self.state_vars[var][1])
+        elif var in self.obs_vars:
+            return self._get_data_obs(self.obs_vars[var][1])
+        else:
+            raise Exception(f"Variable <{var}> not defined in monitor!")
+
+    # Methods to be implemented in subclasses
 
     def sample(self, step, state, observed):
-        pass
+        raise NotImplementedError
 
-    def data_state(self):
-        pass
+    def _get_data_state(self, index: int):
+        raise NotImplementedError
 
-    def data_observed(self):
-        pass
+    def _get_data_obs(self, index: int):
+        raise NotImplementedError
+
 
 
 class RawMonitor(Monitor):
@@ -68,20 +85,20 @@ class RawSubSample(Monitor):
         else:
             self.buffer_observed = np.empty(1, )
 
-    def data_state(self):
-        return self.buffer_state
+    def _get_data_state(self, index: int):
+        return self.buffer_state[:, index, :]
 
-    def data_observed(self):
-        return self.buffer_observed
+    def _get_data_obs(self, index: int):
+        return self.buffer_observed[:, index, :]
 
     def get_numba_sample(self):
         buffer_state = self.buffer_state
         addr_state = buffer_state.ctypes.data
-        state_vars = self.state_vars
+        state_vars = self.state_vars_indices
         n_state = nb.intc(self.n_state_vars)
         buffer_observed = self.buffer_observed
         addr_observed = buffer_observed.ctypes.data
-        obs_vars = self.obs_vars
+        obs_vars = self.obs_vars_indices
         n_obs = nb.intc(self.n_obs_vars)
         n_interim_samples = nb.intc(self.n_interim_samples)
 

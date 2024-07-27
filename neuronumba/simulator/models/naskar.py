@@ -32,13 +32,12 @@ rho = 20
 
 
 class Naskar(Model):
-
     n_params = 21
-    state_vars = ['S_e', 'S_i', 'J']
+    state_vars = Model._build_var_dict(['S_e', 'S_i', 'J'])
     n_state_vars = len(state_vars)
     c_vars = [0]
 
-    observable_vars = ['Ie', 're']
+    observable_vars = Model._build_var_dict(['Ie', 're'])
     n_observable_vars = len(observable_vars)
 
     t_glu = Attr(default=7.46)
@@ -62,8 +61,6 @@ class Naskar(Model):
     B_i = Attr(default=0.18)
     gamma = Attr(default=1.0)
     rho = Attr(default=3.0)
-
-    obs_vars = Attr(default=[], required=False)
 
     m = Attr(dependant=True)
 
@@ -119,7 +116,6 @@ class Naskar(Model):
         observed[1] = 0.0
         return observed
 
-
     def get_numba_dfun(self):
         addr = self.m.ctypes.data
         m_shape = (Naskar.n_params,)
@@ -146,12 +142,9 @@ class Naskar(Model):
             y = m[M_i] * (m[ai] * Ii - m[bi])
             ri = y / (1.0 - np.exp(-m[di] * y))
             dSe = -Se * m[B_e] + m[alfa_e] * m[t_glu] * (
-                        1. - Se) * re / 1000.  # divide by 1000 because we need milliseconds!
+                    1. - Se) * re / 1000.  # divide by 1000 because we need milliseconds!
             dSi = -Si * m[B_i] + m[alfa_i] * m[t_gaba] * (1. - Si) * ri / 1000.
             dJ = m[gamma] * ri / 1000. * (re - m[rho]) / 1000.  # local inhibitory plasticity
             return np.stack((dSe, dSi, dJ)), np.stack((Ie, re))
 
         return Naskar_dfun
-
-
-
