@@ -11,7 +11,10 @@ class BandPassFilter(HasAttr):
     flp = Attr(default=None, required=True)
     fhi = Attr(default=None, required=True)
     remove_artifacts = Attr(default=True, required=False)
-    
+
+    apply_demean = Attr(default=True, required=False)
+    apply_detrend = Attr(default=True, required=False)
+
     def filter(self, signal):
         """
 
@@ -26,8 +29,8 @@ class BandPassFilter(HasAttr):
         signal_filt = np.empty(signal.shape)
         for seed in range(n_rois):
             if not np.isnan(signal[seed, :]).any():
-                ts = detrend(signal[seed, :]) 
-                ts = ts - np.mean(ts)
+                ts = detrend(signal[seed, :]) if self.apply_detrend else signal[seed, :]
+                ts = ts - np.mean(ts) if self.apply_demean else ts
 
                 if self.remove_artifacts:
                     ts[ts > 3. * np.std(ts)] = 3. * np.std(ts)  # Remove strong artefacts
