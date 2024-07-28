@@ -48,7 +48,6 @@ class Monitor(HasAttr):
         raise NotImplementedError
 
 
-
 class RawMonitor(Monitor):
 
     buffer = Attr(dependant=True)
@@ -196,21 +195,3 @@ class TemporalAverage(Monitor):
                         bnb_observed[i, v, :] = np.average(i_bnb_observed[:, obs_vars[v], :], axis=0)
 
         return m_sample
-
-# class TemporalAverage(Monitor):
-#     n_interim_samples = Attr(dependant=True)
-#     buffer = Attr(dependant=True)
-#     interim_buffer = Attr(dependant=True)
-#
-#     def _init_dependant(self):
-#         super()._init_dependant()
-#         self.n_interim_samples = int(self.period / self.dt)
-#         self.interim_buffer = np.zeros((self.n_interim_samples, shape[0], shape[1]))
-#
-#     def sample(self, step, state):
-#         self.interim_buffer[(step - 1) % self.n_interim_samples] = state
-#         if step % self.n_interim_samples == 0:
-#             self.buffer.append(np.average(self.interim_buffer, axis=0))
-#
-#     def data(self):
-#         return np.array(self.buffer)
