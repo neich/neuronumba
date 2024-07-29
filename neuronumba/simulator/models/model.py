@@ -1,8 +1,13 @@
 import numba as nb
-from neuronumba.basic.attr import HasAttr
+import numpy as np
+
+from neuronumba.basic.attr import HasAttr, Attr
 
 
 class Model(HasAttr):
+
+    n_rois = Attr(required=True)
+
     @classmethod
     def _build_var_dict(cls, var_list: list[str]):
         return {v_name: index for index, v_name in enumerate(var_list)}
@@ -28,5 +33,11 @@ class Model(HasAttr):
             return r * g
 
         return linear_coupling
+
+    def as_array(self, param):
+        if isinstance(param, np.ndarray):
+            return param
+        else:
+            return np.r_[param]
 
 

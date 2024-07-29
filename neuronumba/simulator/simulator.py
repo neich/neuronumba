@@ -21,7 +21,7 @@ class Simulator(HasAttr):
 
         self.integrator.configure()
         self.connectivity.configure()
-        self.model.configure()
+        self.model.configure(n_rois=self.connectivity.n_rois)
         self.coupling.configure(c_vars=self.model.c_vars)
 
         dt = self.integrator.dt
