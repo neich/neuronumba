@@ -118,3 +118,51 @@ class CouplingLinearNoDelays(Coupling):
                 data[0, i, :] = state[c_vars[i], :]
 
         return c_update
+
+
+class CouplingNoDelays(Coupling):
+
+    c_func = Attr(required=True)
+    n_cvars = Attr(dependant=True)
+    n_rois = Attr(dependant=True)
+    buffer = Attr(dependant=True)
+
+
+    def _init_dependant(self):
+        super()._init_dependant()
+        self.buffer = np.zeros((1, self.n_cvars, self.n_rois), dtype=np.float64)
+
+    def get_numba_couple(self):
+        buffer = self.buffer
+        addr = buffer.ctypes.data
+        weights = self.weights
+        n_cvars = self.n_cvars
+        n_rois = self.n_rois
+        c_func = self.c_func
+
+        @njit(f8[:, :](intc))
+        def c_couple(step: intc):
+            data = nb.carray(address_as_void_pointer(addr), buffer.shape,
+                             dtype=buffer.dtype)
+            result = np.empty((n_cvars, n_rois), dtype=np.float64)
+            for i in range(n_cvars):
+                r = c_func(weights, data[0, i, :])
+                result[i, :] = r
+            return result
+
+        return c_couple
+
+    def get_numba_update(self):
+        buffer = self.buffer
+        n_cvars = self.n_cvars
+        c_vars = self.c_vars
+        addr = buffer.ctypes.data
+
+        @njit(void(intc, f8[:, :]))
+        def c_update(step: intc, state: ArrF8_2d):
+            data = nb.carray(address_as_void_pointer(addr), buffer.shape,
+                             dtype=buffer.dtype)
+            for i in range(n_cvars):
+                data[0, i, :] = state[c_vars[i], :]
+
+        return c_update
