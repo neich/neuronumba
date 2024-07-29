@@ -33,12 +33,11 @@ alfa_i = 15
 alfa_e = 16
 B_e = 17
 B_i = 18
-# gamma = 19
-# rho = 20
+J = 19
 
 
 class Deco2014(Model):
-    n_params = 19
+    n_params = 20
     state_vars = Model._build_var_dict(['S_e', 'S_i'])
     n_state_vars = len(state_vars)
     c_vars = [0]
@@ -65,8 +64,7 @@ class Deco2014(Model):
     alfa_i = Attr(default=0.53)
     B_e = Attr(default=0.0066)
     B_i = Attr(default=0.18)
-    # gamma = Attr(default=1.0)
-    # rho = Attr(default=3.0)
+    J = Attr(default=1.0)
 
     m = Attr(dependant=True)
 
@@ -106,14 +104,12 @@ class Deco2014(Model):
         self.m[alfa_i] = 0.53
         self.m[B_e] = 0.0066
         self.m[B_i] = 0.18
-        # self.m[gamma] = 1.0
-        # self.m[rho] = 3.0
+        self.m[J] = 1.0
 
     def initial_state(self, n_rois):
         state = np.empty((Deco2014.n_state_vars, n_rois))
         state[0] = 0.001
         state[1] = 0.001
-        state[2] = 1.0
         return state
 
     def initial_observed(self, n_rois):
@@ -135,12 +131,11 @@ class Deco2014(Model):
 
             Se = state[0, :]
             Si = state[1, :]
-            J = state[2, :]
             Se = np.clip(Se, 0.0, 1.0)
             Si = np.clip(Si, 0.0, 1.0)
 
             # Eq for I^E (5). I_external = 0 => resting state condition.
-            Ie = m[We] * m[I0] + m[w] * m[J_NMDA] * Se + m[J_NMDA] * coupling[0, :] - J * Si
+            Ie = m[We] * m[I0] + m[w] * m[J_NMDA] * Se + m[J_NMDA] * coupling[0, :] - m[J] * Si
             Ii = m[Wi] * m[I0] + m[
                 J_NMDA] * Se - Si  # Eq for I^I (6). \lambda = 0 => no long-range feedforward inhibition (FFI)
             y = m[M_e] * (m[ae] * Ie - m[be])
@@ -150,7 +145,6 @@ class Deco2014(Model):
             dSe = -Se * m[B_e] + m[alfa_e] * m[t_glu] * (
                     1. - Se) * re / 1000.  # divide by 1000 because we need milliseconds!
             dSi = -Si * m[B_i] + m[alfa_i] * m[t_gaba] * (1. - Si) * ri / 1000.
-            # dJ = m[gamma] * ri / 1000. * (re - m[rho]) / 1000.  # local inhibitory plasticity
             return np.stack((dSe, dSi)), np.stack((Ie, re))
 
         return Deco2014_dfun
