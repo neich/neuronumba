@@ -55,10 +55,11 @@ B_e = 17
 B_i = 18
 gamma = 19
 rho = 20
+I_external = 21
 
 
 class Naskar2021(Model):
-    n_params = 21
+    n_params = 22
     state_vars = Model._build_var_dict(['S_e', 'S_i', 'J'])
     n_state_vars = len(state_vars)
     c_vars = [0]
@@ -87,6 +88,7 @@ class Naskar2021(Model):
     B_i = Attr(default=0.18)
     gamma = Attr(default=1.0)
     rho = Attr(default=3.0)
+    I_external = Attr(default=0.0)
 
     m = Attr(dependant=True)
 
@@ -128,6 +130,7 @@ class Naskar2021(Model):
         self.m[B_i] = self.as_array(self.B_i)
         self.m[gamma] = self.as_array(self.gamma)
         self.m[rho] = self.as_array(self.rho)
+        self.m[I_external] = self.as_array(self.I_external)
 
     def initial_state(self, n_rois):
         state = np.empty((Naskar2021.n_state_vars, n_rois))
@@ -143,8 +146,8 @@ class Naskar2021(Model):
         return observed
 
     def get_numba_dfun(self):
-        addr = self.m.ctypes.data
-        m_shape = (Naskar2021.n_params,)
+        m_addr = self.m.ctypes.data
+        m_shape = self.m.shape
         m_dtype = self.m.dtype
         # Uncomment this is you deactivate @nb.njit for debugging
         # m = self.m
@@ -152,24 +155,24 @@ class Naskar2021(Model):
         @nb.njit(nb.types.UniTuple(nb.f8[:, :], 2)(nb.f8[:, :], nb.f8[:, :]))
         def Naskar2021_dfun(state: ArrF8_2d, coupling: ArrF8_2d):
             # Comment this line if you deactivate @nb.njit for debugging
-            m = nb.carray(address_as_void_pointer(addr), m_shape, dtype=m_dtype)
+            m = nb.carray(address_as_void_pointer(m_addr), m_shape, dtype=m_dtype)
 
             Se = np.clip(state[0, :], 0.0, 1.0)
             Si = np.clip(state[1, :], 0.0, 1.0)
             J = state[2, :]
 
             # Eq for I^E (5). I_external = 0 => resting state condition.
-            Ie = m[We] * m[I0] + m[w] * m[J_NMDA] * Se + m[J_NMDA] * coupling[0, :] - J * Si
+            Ie = m[We] * m[I0] + m[w] * m[J_NMDA] * Se + m[J_NMDA] * coupling[0, :] - J * Si + m[I_external]
             # Eq for I^I (6). \lambda = 0 => no long-range feedforward inhibition (FFI)
             Ii = m[Wi] * m[I0] + m[J_NMDA] * Se - Si
             y = m[M_e] * (m[ae] * Ie - m[be])
             re = y / (1.0 - np.exp(-m[de] * y))
             y = m[M_i] * (m[ai] * Ii - m[bi])
             ri = y / (1.0 - np.exp(-m[di] * y))
-            dSe = -Se * m[B_e] + m[alfa_e] * m[t_glu] * (
-                    1. - Se) * re / 1000.  # divide by 1000 because we need milliseconds!
+            # divide by 1000 because we need milliseconds!
+            dSe = -Se * m[B_e] + m[alfa_e] * m[t_glu] * (1. - Se) * re / 1000.
             dSi = -Si * m[B_i] + m[alfa_i] * m[t_gaba] * (1. - Si) * ri / 1000.
-            dJ = m[gamma] * ri / 1000. * (re - m[rho]) / 1000.  # local inhibitory plasticity
+            dJ = m[gamma] * (ri / 1000.0) * (re - m[rho]) / 1000.0  # local inhibitory plasticity
             return np.stack((dSe, dSi, dJ)), np.stack((Ie, re))
 
         return Naskar2021_dfun
