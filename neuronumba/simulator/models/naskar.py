@@ -148,3 +148,12 @@ class Naskar(Model):
             return np.stack((dSe, dSi, dJ)), np.stack((Ie, re))
 
         return Naskar_dfun
+
+    def get_numba_coupling(self, g: nb.f8):
+
+        @nb.njit #(nb.f8[:](nb.f8[:, :], nb.f8[:]))
+        def naskar_coupling(weights, state):
+            r = weights @ state
+            return r * g
+
+        return naskar_coupling
