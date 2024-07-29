@@ -1,5 +1,31 @@
-from enum import IntEnum
-
+# ==========================================================================
+# ==========================================================================
+# ==========================================================================
+# Multiscale Dynamic Mean Field (MDMF) with local inhibitory plasticity for the Feedback Inhibition Control
+#
+#  Implemented from:
+#  [NaskarEtAl_2018] Amit Naskar, Anirudh Vattikonda, Gustavo Deco,
+#      Dipanjan Roy, Arpan Banerjee; Multiscale dynamic mean field (MDMF)
+#      model relates resting-state brain dynamics with local cortical
+#      excitatory–inhibitory neurotransmitter homeostasis.
+#      Network Neuroscience 2021; 5 (3): 757–782.
+#      DOI: https://doi.org/10.1162/netn_a_00197
+#
+# Based on the works by
+# [VogelsEtAl_] T. P. Vogels et al., Inhibitory Plasticity Balances Excitation and Inhibition in
+#      Sensory Pathways and Memory Networks.Science334,1569-1573(2011).
+#      DOI: 10.1126/science.1211095
+# [HellyerEtAl_] Peter J. Hellyer, Barbara Jachs, Claudia Clopath, Robert Leech, Local inhibitory
+#      plasticity tunes macroscopic brain dynamics and allows the emergence of functional brain
+#      networks, NeuroImage,  Volume 124, Part A, 1 January 2016, Pages 85-95
+#      DOI: 10.1016/j.neuroimage.2015.08.069
+# [Deco_2014] G. Deco, A. Ponce-Alvarez, P. Hagmann, G.L. Romani, D. Mantini, M. Corbetta
+#      How local excitation-inhibition ratio impacts the whole brain dynamics
+#      J. Neurosci., 34 (2014), pp. 7886-7898
+#
+# By Facundo Faragó and Gustavo Doctorovich
+# November 2023
+# ==========================================================================
 import numpy as np
 import numba as nb
 
@@ -31,7 +57,7 @@ gamma = 19
 rho = 20
 
 
-class Naskar(Model):
+class Naskar2021(Model):
     n_params = 21
     state_vars = Model._build_var_dict(['S_e', 'S_i', 'J'])
     n_state_vars = len(state_vars)
@@ -69,18 +95,18 @@ class Naskar(Model):
 
     @property
     def get_state_vars(self):
-        return Naskar.state_vars
+        return Naskar2021.state_vars
 
     @property
     def get_observablevars(self):
-        return Naskar.observable_vars
+        return Naskar2021.observable_vars
 
     @property
     def get_c_vars(self):
-        return Naskar.c_vars
+        return Naskar2021.c_vars
 
     def _init_dependant(self):
-        self.m = np.empty(Naskar.n_params)
+        self.m = np.empty(Naskar2021.n_params)
         self.m[t_glu] = 7.46
         self.m[t_gaba] = 1.82
         self.m[We] = 1.0
@@ -104,26 +130,26 @@ class Naskar(Model):
         self.m[rho] = 3.0
 
     def initial_state(self, n_rois):
-        state = np.empty((Naskar.n_state_vars, n_rois))
+        state = np.empty((Naskar2021.n_state_vars, n_rois))
         state[0] = 0.001
         state[1] = 0.001
         state[2] = 1.0
         return state
 
     def initial_observed(self, n_rois):
-        observed = np.empty((Naskar.n_observable_vars, n_rois))
+        observed = np.empty((Naskar2021.n_observable_vars, n_rois))
         observed[0] = 0.0
         observed[1] = 0.0
         return observed
 
     def get_numba_dfun(self):
         addr = self.m.ctypes.data
-        m_shape = (Naskar.n_params,)
+        m_shape = (Naskar2021.n_params,)
         m_dtype = self.m.dtype
         m = self.m
 
         @nb.njit(nb.types.UniTuple(nb.f8[:, :], 2)(nb.f8[:, :], nb.f8[:, :]))
-        def Naskar_dfun(state: ArrF8_2d, coupling: ArrF8_2d):
+        def Naskar2021_dfun(state: ArrF8_2d, coupling: ArrF8_2d):
             # Comment this line if you deactive @njit for debugging
             m = nb.carray(address_as_void_pointer(addr), m_shape, dtype=m_dtype)
 
@@ -147,4 +173,4 @@ class Naskar(Model):
             dJ = m[gamma] * ri / 1000. * (re - m[rho]) / 1000.  # local inhibitory plasticity
             return np.stack((dSe, dSi, dJ)), np.stack((Ie, re))
 
-        return Naskar_dfun
+        return Naskar2021_dfun

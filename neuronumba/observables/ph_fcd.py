@@ -14,6 +14,19 @@ class PhFCD(Observable):
         pim_matrix = phase_interaction_matrix(bold_signal)  # Compute the Phase-Interaction Matrix
         return PhFCD_from_fmri(bold_signal.shape[0], bold_signal.shape[1], self.discard_offset, pim_matrix)
 
+    # ==================================================================
+    # buildFullMatrix: given the output of from_fMRI, this function
+    # returns the full matrix. Not needed, except for plotting and such...
+    # ==================================================================
+    def buildFullMatrix(self, FCD_data):
+        LL = FCD_data.shape[0]
+        # T is size of the matrix given the length of the lower/upper triangular part (displaced by 1)
+        T = int((1. + np.sqrt(1. + 8. * LL)) / 2.)
+        fcd_mat = np.zeros((T, T))
+        fcd_mat[np.triu_indices(T, k=1)] = FCD_data
+        fcd_mat += fcd_mat.T
+        return fcd_mat
+
 
 def PhFCD_from_fmri(n_rois, t_max, discard_offset, pim_matrix):
     # calculates the size of phfcd vector
