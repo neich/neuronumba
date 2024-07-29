@@ -34,6 +34,8 @@ from neuronumba.numba_tools import address_as_void_pointer
 from neuronumba.numba_tools.types import ArrF8_2d
 from neuronumba.simulator.models import Model
 
+
+# ====================== var indices into the array
 t_glu = 0
 t_gaba = 1
 We = 2
@@ -58,6 +60,7 @@ rho = 20
 I_external = 21
 
 
+# ==========================================================================
 class Naskar2021(Model):
     n_params = 22
     state_vars = Model._build_var_dict(['S_e', 'S_i', 'J'])

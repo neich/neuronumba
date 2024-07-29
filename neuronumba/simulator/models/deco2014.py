@@ -14,6 +14,8 @@ from neuronumba.numba_tools import address_as_void_pointer
 from neuronumba.numba_tools.types import ArrF8_1d, ArrF8_2d
 from neuronumba.simulator.models import Model
 
+
+# ====================== var indices into the array
 t_glu = 0
 t_gaba = 1
 We = 2
@@ -34,10 +36,12 @@ alfa_e = 16
 B_e = 17
 B_i = 18
 J = 19
+I_external = 20
 
 
+# ==========================================================================
 class Deco2014(Model):
-    n_params = 20
+    n_params = 21
     state_vars = Model._build_var_dict(['S_e', 'S_i'])
     n_state_vars = len(state_vars)
     c_vars = [0]
@@ -65,6 +69,7 @@ class Deco2014(Model):
     B_e = Attr(default=0.0066)
     B_i = Attr(default=0.18)
     J = Attr(default=1.0)
+    I_external = Attr(default=0.0)
 
     m = Attr(dependant=True)
 
@@ -105,6 +110,7 @@ class Deco2014(Model):
         self.m[B_e] = self.as_array(self.B_e)
         self.m[B_i] = self.as_array(self.B_i)
         self.m[J] = self.as_array(self.J)
+        self.m[I_external] = self.as_array(self.I_external)
 
     def initial_state(self, n_rois):
         state = np.empty((Deco2014.n_state_vars, n_rois))
@@ -134,7 +140,7 @@ class Deco2014(Model):
             Si = np.clip(state[1, :], 0.0,1.0)
 
             # Eq for I^E (5). I_external = 0 => resting state condition.
-            Ie = m[We] * m[I0] + m[w] * m[J_NMDA] * Se + m[J_NMDA] * coupling[0, :] - m[J] * Si
+            Ie = m[We] * m[I0] + m[w] * m[J_NMDA] * Se + m[J_NMDA] * coupling[0, :] - m[J] * Si + m[I_external]
             # Eq for I^I (6). \lambda = 0 => no long-range feedforward inhibition (FFI)
             Ii = m[Wi] * m[I0] + m[J_NMDA] * Se - Si
             y = m[M_e] * (m[ae] * Ie - m[be])
