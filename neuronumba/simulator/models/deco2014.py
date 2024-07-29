@@ -105,8 +105,6 @@ class Deco2014(Model):
         self.m[B_e] = self.as_array(self.B_e)
         self.m[B_i] = self.as_array(self.B_i)
         self.m[J] = self.as_array(self.J)
-        # self.m[gamma] = 1.0
-        # self.m[rho] = 3.0
 
     def initial_state(self, n_rois):
         state = np.empty((Deco2014.n_state_vars, n_rois))
@@ -121,20 +119,19 @@ class Deco2014(Model):
         return observed
 
     def get_numba_dfun(self):
-        addr = self.m.ctypes.data
-        m_shape = (Deco2014.n_params,)
+        m_addr = self.m.ctypes.data
+        m_shape = self.m.shape
         m_dtype = self.m.dtype
-        m = self.m
+        # Uncomment this line if you want to debug Deco2014_dfun without @nb.njit
+        # m = self.m
 
         @nb.njit(nb.types.UniTuple(nb.f8[:, :], 2)(nb.f8[:, :], nb.f8[:, :]))
         def Deco2014_dfun(state: ArrF8_2d, coupling: ArrF8_2d):
-            # Comment this line if you deactive @njit for debugging
-            m = nb.carray(address_as_void_pointer(addr), m_shape, dtype=m_dtype)
+            # Comment this line if you deactivate @nb.njit for debugging
+            m = nb.carray(address_as_void_pointer(m_addr), m_shape, dtype=m_dtype)
 
-            Se = state[0, :]
-            Si = state[1, :]
-            Se = np.clip(Se, 0.0, 1.0)
-            Si = np.clip(Si, 0.0, 1.0)
+            Se = np.clip(state[0, :],0.0, 1.0)
+            Si = np.clip(state[1, :], 0.0,1.0)
 
             # Eq for I^E (5). I_external = 0 => resting state condition.
             Ie = m[We] * m[I0] + m[w] * m[J_NMDA] * Se + m[J_NMDA] * coupling[0, :] - m[J] * Si
