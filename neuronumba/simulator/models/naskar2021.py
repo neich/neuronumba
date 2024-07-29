@@ -31,8 +31,8 @@ import numba as nb
 
 from neuronumba.basic.attr import Attr
 from neuronumba.numba_tools import address_as_void_pointer
-from neuronumba.numba_tools.types import ArrF8_1d, ArrF8_2d
-from neuronumba.simulator.models.base_model import Model
+from neuronumba.numba_tools.types import ArrF8_2d
+from neuronumba.simulator.models import Model
 
 t_glu = 0
 t_gaba = 1
@@ -106,28 +106,28 @@ class Naskar2021(Model):
         return Naskar2021.c_vars
 
     def _init_dependant(self):
-        self.m = np.empty(Naskar2021.n_params)
-        self.m[t_glu] = 7.46
-        self.m[t_gaba] = 1.82
-        self.m[We] = 1.0
-        self.m[Wi] = 0.7
-        self.m[I0] = 0.382
-        self.m[w] = 1.4
-        self.m[J_NMDA] = 0.15
-        self.m[M_e] = 1.0
-        self.m[ae] = 310.0
-        self.m[be] = 125.0
-        self.m[de] = 0.16
-        self.m[ai] = 615.0
-        self.m[bi] = 177.0
-        self.m[di] = 0.087
-        self.m[M_i] = 1.0
-        self.m[alfa_e] = 0.072
-        self.m[alfa_i] = 0.53
-        self.m[B_e] = 0.0066
-        self.m[B_i] = 0.18
-        self.m[gamma] = 1.0
-        self.m[rho] = 3.0
+        self.m = np.empty((Naskar2021.n_params, self.n_rois))
+        self.m[t_glu] = self.as_array(self.t_glu)
+        self.m[t_gaba] = self.as_array(self.t_gaba)
+        self.m[We] = self.as_array(self.We)
+        self.m[Wi] = self.as_array(self.Wi)
+        self.m[I0] = self.as_array(self.I0)
+        self.m[w] = self.as_array(self.w)
+        self.m[J_NMDA] = self.as_array(self.J_NMDA)
+        self.m[M_e] = self.as_array(self.M_e)
+        self.m[ae] = self.as_array(self.ae)
+        self.m[be] = self.as_array(self.be)
+        self.m[de] = self.as_array(self.de)
+        self.m[ai] = self.as_array(self.ai)
+        self.m[bi] = self.as_array(self.bi)
+        self.m[di] = self.as_array(self.di)
+        self.m[M_i] = self.as_array(self.M_i)
+        self.m[alfa_e] = self.as_array(self.alfa_e)
+        self.m[alfa_i] = self.as_array(self.alfa_i)
+        self.m[B_e] = self.as_array(self.B_e)
+        self.m[B_i] = self.as_array(self.B_i)
+        self.m[gamma] = self.as_array(self.gamma)
+        self.m[rho] = self.as_array(self.rho)
 
     def initial_state(self, n_rois):
         state = np.empty((Naskar2021.n_state_vars, n_rois))
@@ -146,23 +146,22 @@ class Naskar2021(Model):
         addr = self.m.ctypes.data
         m_shape = (Naskar2021.n_params,)
         m_dtype = self.m.dtype
-        m = self.m
+        # Uncomment this is you deactivate @nb.njit for debugging
+        # m = self.m
 
         @nb.njit(nb.types.UniTuple(nb.f8[:, :], 2)(nb.f8[:, :], nb.f8[:, :]))
         def Naskar2021_dfun(state: ArrF8_2d, coupling: ArrF8_2d):
-            # Comment this line if you deactive @njit for debugging
+            # Comment this line if you deactivate @nb.njit for debugging
             m = nb.carray(address_as_void_pointer(addr), m_shape, dtype=m_dtype)
 
-            Se = state[0, :]
-            Si = state[1, :]
+            Se = np.clip(state[0, :], 0.0, 1.0)
+            Si = np.clip(state[1, :], 0.0, 1.0)
             J = state[2, :]
-            Se = np.clip(Se, 0.0, 1.0)
-            Si = np.clip(Si, 0.0, 1.0)
 
             # Eq for I^E (5). I_external = 0 => resting state condition.
             Ie = m[We] * m[I0] + m[w] * m[J_NMDA] * Se + m[J_NMDA] * coupling[0, :] - J * Si
-            Ii = m[Wi] * m[I0] + m[
-                J_NMDA] * Se - Si  # Eq for I^I (6). \lambda = 0 => no long-range feedforward inhibition (FFI)
+            # Eq for I^I (6). \lambda = 0 => no long-range feedforward inhibition (FFI)
+            Ii = m[Wi] * m[I0] + m[J_NMDA] * Se - Si
             y = m[M_e] * (m[ae] * Ie - m[be])
             re = y / (1.0 - np.exp(-m[de] * y))
             y = m[M_i] * (m[ai] * Ii - m[bi])
