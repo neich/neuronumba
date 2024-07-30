@@ -19,10 +19,11 @@ class Simulator(HasAttr):
     def run(self, t_start=0, t_end=10000, stimulus=None):
         assert self.connectivity, "No connectivity defined for simulation!"
 
+        # Connect all components of the simulation
         self.integrator.configure()
         self.connectivity.configure()
         self.model.configure(n_rois=self.connectivity.n_rois)
-        self.coupling.configure(c_vars=self.model.c_vars)
+        self.coupling.configure(c_vars=self.model.c_vars, c_func=self.model.get_numba_coupling())
 
         dt = self.integrator.dt
         t_max = t_end - t_start
