@@ -1,11 +1,19 @@
 import inspect
+from enum import Enum
+
+
+class AttrType(Enum):
+    Unknown = 1,
+    Model = 2
+
 
 class Attr(object):
 
-    def __init__(self, default=None, required=True, dependant=False):
+    def __init__(self, default=None, required=True, dependant=False, attr_type=AttrType.Unknown):
         self.default = default
         self.required = bool(required)
         self.dependant = dependant
+        self.attr_type = attr_type
 
 
 class HasAttr(object):
@@ -24,6 +32,9 @@ class HasAttr(object):
                 raise AttributeError(f"Attribute <{name}> of class <{cls.__name__}> is dependant and cannot be manually initialized!")
             setattr(self, name, value)
 
+    @classmethod
+    def _get_attributes(cls):
+        return dict(inspect.getmembers(cls, lambda o: isinstance(o, Attr)))
 
     def configure(self, **kwargs):
         cls = type(self)
@@ -37,6 +48,7 @@ class HasAttr(object):
             setattr(self, name, value)
         self._check_required()
         self._init_dependant()
+        self._init_dependant_automatic()
 
     def _check_required(self):
         cls = type(self)
@@ -47,3 +59,7 @@ class HasAttr(object):
 
     def _init_dependant(self):
         pass
+
+    def _init_dependant_automatic(self):
+        pass
+
