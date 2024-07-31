@@ -17,10 +17,13 @@ from neuronumba.simulator.models.model import LinearCouplingModel
 
 
 class Deco2014(LinearCouplingModel):
+    # Se, excitatory synaptic activity
     state_vars = Model._build_var_dict(['S_e', 'S_i'])
     n_state_vars = len(state_vars)
     c_vars = [0]
 
+    # Ie, excitatory current
+    # re, excitatory firing rate
     observable_vars = Model._build_var_dict(['Ie', 're'])
     n_observable_vars = len(observable_vars)
 
@@ -28,9 +31,9 @@ class Deco2014(LinearCouplingModel):
     taog = Attr(default=10.0, attr_type=AttrType.Model)
     gamma_e = Attr(default=0.641, attr_type=AttrType.Model)
     gamma_i = Attr(default=1.0, attr_type=AttrType.Model)
-    I0 = Attr(default=0.382, attr_type=AttrType.Model)
+    I0 = Attr(default=0.382, attr_type=AttrType.Model)     # [nA] overall effective external input
     w = Attr(default=1.4, attr_type=AttrType.Model)
-    J_NMDA = Attr(default=0.15, attr_type=AttrType.Model)
+    J_NMDA = Attr(default=0.15, attr_type=AttrType.Model)  # [nA] NMDA current
     Jext_e = Attr(default=1.0, attr_type=AttrType.Model)
     Jext_i = Attr(default=0.7, attr_type=AttrType.Model)
     ae = Attr(default=310.0, attr_type=AttrType.Model)
@@ -82,6 +85,7 @@ class Deco2014(LinearCouplingModel):
             # Comment this line if you deactivate @nb.njit for debugging
             m = nb.carray(address_as_void_pointer(m_addr), m_shape, dtype=m_dtype)
 
+            # Clamping, needed in Deco2014 model and derivatives...
             Se = np.clip(state[0, :],0.0,1.0)
             Si = np.clip(state[1, :],0.0,1.0)
 
@@ -90,8 +94,12 @@ class Deco2014(LinearCouplingModel):
             # Eq for I^I (6). \lambda = 0 => no long-range feedforward inhibition (FFI)
             Ii = m[np.intp(P.Jext_i)] * m[np.intp(P.I0)] + m[np.intp(P.J_NMDA)] * Se - Si
             y = m[np.intp(P.ae)] * Ie - m[np.intp(P.be)]
+            # In the paper re was g_E * (I^{(E)_n} - I^{(E)_{thr}}). In the paper (7)
+            # Here, we distribute as g_E * I^{(E)_n} - g_E * I^{(E)_{thr}}, thus...
             re = y / (1.0 - np.exp(-m[np.intp(P.de)] * y))
             y = m[np.intp(P.ai)] * Ii - m[np.intp(P.bi)]
+            # In the paper ri was g_I * (I^{(I)_n} - I^{(I)_{thr}}). In the paper (8)
+            # Apply same distributing as above...
             ri = y / (1.0 - np.exp(-m[np.intp(P.di)] * y))
             # divide by 1000 because we need milliseconds!
             dSe = -Se / m[np.intp(P.taon)] + m[np.intp(P.gamma_e)] * (1. - Se) * re / 1000.
