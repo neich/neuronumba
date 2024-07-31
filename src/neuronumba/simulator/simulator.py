@@ -1,7 +1,7 @@
 import numba as nb
 
-from src.neuronumba import Attr, HasAttr
-from src.neuronumba import ArrF8_2d, ArrF8_1d
+from neuronumba.basic.attr import Attr, HasAttr
+from neuronumba.numba_tools.types import ArrF8_2d, ArrF8_1d
 
 
 class Simulator(HasAttr):

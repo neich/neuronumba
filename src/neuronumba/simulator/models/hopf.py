@@ -35,10 +35,10 @@ from enum import IntEnum
 import numpy as np
 import numba as nb
 
-from src.neuronumba import Attr, AttrType
-from src.neuronumba import address_as_void_pointer
-from src.neuronumba import ArrF8_1d, ArrF8_2d
-from src.neuronumba import Model
+from neuronumba.basic.attr import Attr, AttrType
+from neuronumba.numba_tools.addr import address_as_void_pointer
+from neuronumba.numba_tools.types import ArrF8_1d, ArrF8_2d
+from neuronumba.simulator.models import Model
 
 
 class Hopf(Model):
@@ -58,6 +58,7 @@ class Hopf(Model):
     I_external = Attr(default=0.0, attr_type=AttrType.Model)
     conservative = Attr(default=True, attr_type=AttrType.Model)
     weights = Attr(required=True)
+    g = Attr(required=True)
 
     weights_t = Attr(dependant=True)
     sct = Attr(dependant=True)

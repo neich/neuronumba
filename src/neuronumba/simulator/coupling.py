@@ -2,9 +2,9 @@ from numba import f8, int32, njit, intc, void
 import numpy as np
 import numba as nb
 
-from src.neuronumba import HasAttr, Attr
-from src.neuronumba import address_as_void_pointer
-from src.neuronumba import ArrF8_2d
+from neuronumba.basic.attr import HasAttr, Attr
+from neuronumba.numba_tools.addr import address_as_void_pointer
+from neuronumba.numba_tools.types import ArrF8_2d
 
 
 class Coupling(HasAttr):
@@ -25,13 +25,14 @@ class CouplingLinearDense(Coupling):
     # Global linear coupling
     g = Attr(default=None, required=True)
     delays = Attr(default=None, required=True)
+    dt = Attr(required=True)
 
     i_delays = Attr(dependant=True)
     buffer = Attr(dependant=True)
     n_time = Attr(dependant=True)
 
     def _init_dependantt(self):
-        self.i_delays = np.rint(self.delays / dt).astype(np.int32)
+        self.i_delays = np.rint(self.delays / self.dt).astype(np.int32)
         self.n_time = np.max(self.i_delays) + 1
         self.buffer = np.zeros((len(self.c_vars), self.n_time, self.n_rois))
 

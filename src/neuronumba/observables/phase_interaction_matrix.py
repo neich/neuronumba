@@ -1,7 +1,6 @@
 from numba import njit, f8, intc
 import numpy as np
 from scipy import signal
-from scipy.signal import detrend
 
 
 @njit

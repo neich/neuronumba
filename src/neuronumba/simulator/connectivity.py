@@ -1,6 +1,4 @@
-import numpy as np
-
-from src.neuronumba import HasAttr, Attr
+from neuronumba.basic.attr import HasAttr, Attr
 
 
 class Connectivity(HasAttr):

@@ -1,6 +1,6 @@
 import numpy as np
 
-from src.neuronumba import HasAttr
+from neuronumba.basic.attr import HasAttr
 
 
 class ObservableAccumulator(HasAttr):

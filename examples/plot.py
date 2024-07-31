@@ -11,7 +11,7 @@ import os.path
 import matplotlib.pyplot as plt
 
 
-def plotFitting(ax, WEs, fitting, distanceSettings, title, graphLabel=None):
+def plot_fitting(ax, WEs, fitting, distanceSettings, title, graphLabel=None):
     print("\n\n#####################################################################################################")
     print(f"# Results (in ({WEs[0]}, {WEs[-1]}):")
     for ds in distanceSettings:
@@ -30,21 +30,21 @@ def plotFitting(ax, WEs, fitting, distanceSettings, title, graphLabel=None):
     print("#####################################################################################################\n\n")
 
 
-def listAllFiles(filePath):
+def list_all_files(filePath):
     import glob
     expr = filePath.format("*")
     allFiles = glob.glob(expr)
     return allFiles
 
 
-def loadAndPlotAx(ax, filePath,
+def load_and_plot_ax(ax, filePath,
                   distanceSettings, title,
                   WEs=None,
                   weName=None,
                   decimals=3,
                   empFilePath=None,
                   graphLabel=None):
-    def processFile(fileName, ds):
+    def process_file(fileName, ds):
         simValues = sio.loadmat(fileName)
         we = simValues[weName]
         # ---- and now compute the final FC and FCD distances for this G (we)!!! ----
@@ -65,7 +65,7 @@ def loadAndPlotAx(ax, filePath,
         for ds in distanceSettings:
             empValues[ds] = processed[ds]
 
-    allFiles = listAllFiles(filePath)  # collect all files, both when WEs are provided and when they are not.
+    allFiles = list_all_files(filePath)  # collect all files, both when WEs are provided and when they are not.
     fitting = np.zeros((1+len(distanceSettings), len(allFiles)), dtype=np.float64)
     # fitting = {}
     # for pos, ds in enumerate(distanceSettings):
@@ -74,7 +74,7 @@ def loadAndPlotAx(ax, filePath,
     if WEs is None:
         for wePos, fileName in enumerate(allFiles):
             for dspos, ds in enumerate(distanceSettings):
-                we, value = processFile(fileName, ds)
+                we, value = process_file(fileName, ds)
                 fitting[0, wePos] = we
                 fitting[dspos+1, wePos] = value
         fitting = fitting[::, fitting[0,].argsort()[::]]
@@ -85,39 +85,39 @@ def loadAndPlotAx(ax, filePath,
             if os.path.exists(fileName):
                 fitting[0, wePos] = we  # first column are the we values
                 for dspos, ds in enumerate(distanceSettings):
-                    _, value = processFile(fileName, ds)  # we do not need the we value...
+                    _, value = process_file(fileName, ds)  # we do not need the we value...
                     fitting[dspos+1, wePos] = value
                 wePos += 1
 
     data = {ds: fitting[1+pos,] for pos,ds in enumerate(distanceSettings)}
-    plotFitting(ax, fitting[0], data, distanceSettings, title, graphLabel=graphLabel)
+    plot_fitting(ax, fitting[0], data, distanceSettings, title, graphLabel=graphLabel)
 
 
-def loadAndPlot(filePath,
-                distanceSettings,
-                WEs=None,
-                weName=None,
-                decimals=3,
-                empFilePath=None,
-                title=''):
+def load_and_plot(filePath,
+                  distanceSettings,
+                  WEs=None,
+                  weName=None,
+                  decimals=3,
+                  empFilePath=None,
+                  title=''):
     plt.rcParams.update({'font.size': 15})
     fig = plt.figure()
     grid = plt.GridSpec(1, 1)
     ax = fig.add_subplot(grid[0,0])
     localTitle = f"computing graph " + title
-    loadAndPlotAx(ax, filePath, distanceSettings, localTitle,
+    load_and_plot_ax(ax, filePath, distanceSettings, localTitle,
                   WEs=WEs, weName=weName, decimals=decimals, empFilePath=empFilePath)
     plt.legend(loc='upper right')
     plt.show()
 
 
-def loadAndPlotMultipleGraphs(filePaths,
-                              distanceSettings,
-                              WEs=None,
-                              weName=None,
-                              decimals=3,
-                              empFilePath=None,
-                              titles=None):
+def load_and_plot_multiple_graphs(filePaths,
+                                  distanceSettings,
+                                  WEs=None,
+                                  weName=None,
+                                  decimals=3,
+                                  empFilePath=None,
+                                  titles=None):
     plt.rcParams.update({'font.size': 15})
     fig = plt.figure()
     grid = plt.GridSpec(1, 1)
@@ -127,13 +127,13 @@ def loadAndPlotMultipleGraphs(filePaths,
             localTitle = f"computing graph " + titles[pos]
         else:
             localTitle = "computing graph"
-        loadAndPlotAx(ax, path, distanceSettings, localTitle,
+        load_and_plot_ax(ax, path, distanceSettings, localTitle,
                       WEs=WEs, weName=weName, decimals=decimals, empFilePath=empFilePath, graphLabel=titles[pos])
     plt.legend(loc='upper right')
     plt.show()
 
 
-def pltFullParmRange(globalTitle, fullFilePath, distanceSettings, parms, parmRange, graphShape):
+def plt_full_parm_range(globalTitle, fullFilePath, distanceSettings, parms, parmRange, graphShape):
     plt.rcParams.update({'font.size': 15})
     graph = parms.reshape(graphShape)
     fig, axs = plt.subplots(graph.shape[0], graph.shape[1])
@@ -141,7 +141,7 @@ def pltFullParmRange(globalTitle, fullFilePath, distanceSettings, parms, parmRan
         print(f"plotting graph({ix}, {iy}) -> parm={graph[ix,iy]} for parm in {parmRange}")
         filePath = fullFilePath.format(graph[ix,iy], '{}')
         localTitle = f"computing @ parm={graph[ix,iy]}"
-        loadAndPlotAx(axs[ix,iy], filePath,
+        load_and_plot_ax(axs[ix,iy], filePath,
                       distanceSettings, localTitle,
                       parmRange)
 

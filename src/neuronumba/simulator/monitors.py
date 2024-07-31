@@ -1,9 +1,9 @@
 import numpy as np
 import numba as nb
 
-from src.neuronumba import HasAttr, Attr
-from src.neuronumba import address_as_void_pointer
-from src.neuronumba import ArrF8_2d
+from neuronumba.basic.attr import HasAttr, Attr
+from neuronumba.numba_tools.addr import address_as_void_pointer
+from neuronumba.numba_tools.types import ArrF8_2d
 
 
 class Monitor(HasAttr):

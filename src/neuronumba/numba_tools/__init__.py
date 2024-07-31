@@ -1,1 +1,1 @@
-from src.neuronumba import address_as_void_pointer
+from neuronumba.numba_tools import address_as_void_pointer
