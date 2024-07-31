@@ -31,11 +31,11 @@ from enum import auto, IntEnum
 import numpy as np
 import numba as nb
 
-from neuronumba.basic.attr import Attr, AttrType
-from neuronumba.numba_tools import address_as_void_pointer
-from neuronumba.numba_tools.types import ArrF8_2d
-from neuronumba.simulator.models import Model
-from neuronumba.simulator.models.model import LinearCouplingModel
+from src.neuronumba import Attr, AttrType
+from src.neuronumba import address_as_void_pointer
+from src.neuronumba import ArrF8_2d
+from src.neuronumba import Model
+from src.neuronumba import LinearCouplingModel
 
 
 class Naskar2021(LinearCouplingModel):

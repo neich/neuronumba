@@ -35,10 +35,10 @@ from enum import IntEnum
 import numpy as np
 import numba as nb
 
-from neuronumba.basic.attr import Attr, AttrType
-from neuronumba.numba_tools import address_as_void_pointer
-from neuronumba.numba_tools.types import ArrF8_1d, ArrF8_2d
-from neuronumba.simulator.models.model import Model
+from src.neuronumba import Attr, AttrType
+from src.neuronumba import address_as_void_pointer
+from src.neuronumba import ArrF8_1d, ArrF8_2d
+from src.neuronumba import Model
 
 
 class Hopf(Model):

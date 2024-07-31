@@ -1,5 +1,5 @@
 import numpy as np
-from neuronumba.basic.attr import HasAttr, Attr
+from src.neuronumba import HasAttr, Attr
 
 
 class Observable(HasAttr):

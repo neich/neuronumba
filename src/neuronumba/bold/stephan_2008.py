@@ -19,8 +19,8 @@
 import numpy as np
 from numba import njit
 
-from neuronumba.basic.attr import Attr
-from neuronumba.bold.base_bold import Bold
+from src.neuronumba import Attr
+from src.neuronumba import Bold
 
 
 class BoldStephan2008(Bold):

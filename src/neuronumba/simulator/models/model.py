@@ -3,7 +3,7 @@ from enum import Enum, IntEnum
 import numba as nb
 import numpy as np
 
-from neuronumba.basic.attr import HasAttr, Attr, AttrType
+from src.neuronumba import HasAttr, Attr, AttrType
 
 class ParameterEnum(object):
     def __init__(self):

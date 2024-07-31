@@ -1,7 +1,6 @@
-from numba.experimental import jitclass
 import numpy as np
 
-from neuronumba.basic.attr import HasAttr, Attr
+from src.neuronumba import HasAttr, Attr
 
 
 class Noise(HasAttr):

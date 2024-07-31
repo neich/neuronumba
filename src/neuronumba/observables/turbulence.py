@@ -3,9 +3,9 @@
 import numpy as np
 from scipy import signal
 
-from neuronumba.basic.attr import Attr
-from neuronumba.observables.base_observable import Observable
-from neuronumba.tools import matlab_tricks
+from src.neuronumba import Attr
+from src.neuronumba import Observable
+from src.neuronumba import matlab_tricks
 
 
 lambda_val = 0.18

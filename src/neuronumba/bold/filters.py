@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.signal import butter, detrend, filtfilt
 
-from neuronumba.basic.attr import HasAttr, Attr
+from src.neuronumba import HasAttr, Attr
 
 
 class BandPassFilter(HasAttr):
