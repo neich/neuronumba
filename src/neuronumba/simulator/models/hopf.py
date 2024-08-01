@@ -36,8 +36,9 @@ import numpy as np
 import numba as nb
 
 from neuronumba.basic.attr import Attr, AttrType
+from neuronumba.numba_tools import addr
 from neuronumba.numba_tools.addr import address_as_void_pointer
-from neuronumba.numba_tools.types import ArrF8_1d, ArrF8_2d
+from neuronumba.numba_tools.types import NDA_f8_1d, NDA_f8_2d
 from neuronumba.simulator.models import Model
 
 
@@ -64,10 +65,6 @@ class Hopf(Model):
     sct = Attr(dependant=True)
     ink = Attr(dependant=True)
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.weights_t = self.weights.T
-
     @property
     def get_state_vars(self):
         return Hopf.state_vars
@@ -87,8 +84,8 @@ class Hopf(Model):
 
     def initial_state(self, n_rois):
         state = np.empty((Hopf.n_state_vars, n_rois))
-        state[0] = 0.001
-        state[1] = 0.001
+        state[0] = 0.1
+        state[1] = 0.1
         return state
 
     def initial_observed(self, n_rois):
@@ -103,19 +100,19 @@ class Hopf(Model):
         :param g: global linear coupling
         :return:
         """
-        wt_addr = self.weights_t.ctypes.data
-        wt_shape = self.weights_t.shape
-        wt_dtype = self.weights_t.dtype
-        m_addr = self.m.ctypes.data
-        m_shape = self.m.shape
-        m_dtype = self.m.dtype
+        wt_addr, wt_shape, wt_dtype = addr.get_addr(self.weights_t)
+        w_addr = self.weights.ctypes.data
+        w_shape = self.weights.shape
+        w_dtype = self.weights.dtype
         ink = self.ink
+        # Uncomment this if you want to debug the coupling function
+        # wt = self.weights_t
 
-        @nb.njit #(nb.f8[:](nb.f8[:, :], nb.f8[:]))
+        @nb.njit #(nb.f8[:, :](nb.f8[:, :], nb.f8[:, :]))
         def hopf_coupling(weights, state):
+            # Comment the next 2 llines if you want to debug this function
             wt = nb.carray(address_as_void_pointer(wt_addr), wt_shape, dtype=wt_dtype)
-            m = nb.carray(address_as_void_pointer(m_addr), m_shape, dtype=m_dtype)
-            r = wt @ state
+            r = np.dot(state, wt)
             return r - ink * state
 
         return hopf_coupling
@@ -128,7 +125,7 @@ class Hopf(Model):
         P = self.P
 
         @nb.njit(nb.types.UniTuple(nb.f8[:, :], 2)(nb.f8[:, :], nb.f8[:, :]))
-        def Hopf_dfun(state: ArrF8_2d, coupling: ArrF8_2d):
+        def Hopf_dfun(state: NDA_f8_2d, coupling: NDA_f8_2d):
             # Comment this line if you deactive @njit for debugging
             m = nb.carray(address_as_void_pointer(m_addr), m_shape, dtype=m_dtype)
 
