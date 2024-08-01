@@ -1,5 +1,6 @@
 import numpy as np
-from nptyping import NDArray, Shape
+import numpy.typing as npt
 
-ArrF8_2d = NDArray[Shape["*, *"], np.float64]
-ArrF8_1d = NDArray[Shape["*"], np.float64]
+# Right now numpy does not support shapes, but it is coming soon
+NDA_f8_2d = npt.NDArray[np.float64]
+NDA_f8_1d = npt.NDArray[np.float64]
