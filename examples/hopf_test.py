@@ -19,7 +19,7 @@ import plot
 from neuronumba.observables.accumulators import ConcatenatingAccumulator
 from neuronumba.observables.measures import KolmogorovSmirnovStatistic
 from neuronumba.simulator.connectivity import Connectivity
-from neuronumba.simulator.coupling import CouplingNoDelays
+from neuronumba.simulator.history import HistoryNoDelays
 from neuronumba.simulator.integrators.euler import EulerDeterministic, EulerStochastic
 from neuronumba.simulator.models.hopf import Hopf
 from neuronumba.simulator.monitors import RawSubSample
@@ -121,10 +121,10 @@ def sim_hopf(weights, we, obs_var):
     integ = EulerStochastic(dt=dt, sigmas=np.r_[1e-3, 1e-3])
 
     # coupling = CouplingLinearDense(weights=weights, delays=con.delays, c_vars=np.array([0], dtype=np.int32), n_rois=n_rois)
-    coupling = CouplingNoDelays(weights=weights)
+    history = HistoryNoDelays(weights=weights)
     # mnt = TemporalAverage(period=1.0, dt=dt)
     monitor = RawSubSample(period=sampling_period, state_vars=m.get_state_sub([obs_var]), obs_vars=m.get_observed_sub())
-    s = Simulator(connectivity=con, model=m, coupling=coupling, integrator=integ, monitors=[monitor])
+    s = Simulator(connectivity=con, model=m, coupling=history, integrator=integ, monitors=[monitor])
     start_time = time.perf_counter()
     s.run(0, t_max_neuronal + t_warmup)
     t_sim = time.perf_counter() - start_time

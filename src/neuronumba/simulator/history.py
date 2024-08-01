@@ -7,7 +7,7 @@ from neuronumba.numba_tools import addr
 from neuronumba.numba_tools.types import NDA_f8_2d
 
 
-class Coupling(HasAttr):
+class History(HasAttr):
     weights = Attr(default=None, required=True)
     # Array with indices of state variables to couple
     c_vars = Attr(default=None, required=True)
@@ -20,7 +20,7 @@ class Coupling(HasAttr):
         self.n_rois = self.weights.shape[0]
 
 
-class CouplingLinearDense(Coupling):
+class HistoryDense(History):
 
     # Global linear coupling
     g = Attr(default=None, required=True)
@@ -31,7 +31,7 @@ class CouplingLinearDense(Coupling):
     buffer = Attr(dependant=True)
     n_time = Attr(dependant=True)
 
-    def _init_dependantt(self):
+    def _init_dependant(self):
         self.i_delays = np.rint(self.delays / self.dt).astype(np.int32)
         self.n_time = np.max(self.i_delays) + 1
         self.buffer = np.zeros((len(self.c_vars), self.n_time, self.n_rois))
@@ -77,7 +77,7 @@ class CouplingLinearDense(Coupling):
 
 
 
-class CouplingNoDelays(Coupling):
+class HistoryNoDelays(History):
 
     n_cvars = Attr(dependant=True)
     n_rois = Attr(dependant=True)

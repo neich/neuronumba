@@ -13,7 +13,7 @@ class Simulator(HasAttr):
 
     integrator = Attr(required=True)
 
-    coupling = Attr(required=True)
+    history = Attr(required=True)
 
     monitors = Attr(required=True)
 
@@ -24,7 +24,7 @@ class Simulator(HasAttr):
         self.integrator.configure()
         self.connectivity.configure()
         self.model.configure(n_rois=self.connectivity.n_rois)
-        self.coupling.configure(c_vars=self.model.c_vars)
+        self.history.configure(c_vars=self.model.c_vars)
 
         dt = self.integrator.dt
         t_max = t_end - t_start
@@ -38,25 +38,26 @@ class Simulator(HasAttr):
         for m in self.monitors:
             m.configure(dt=dt, t_max=t_max, n_rois=n_rois)
 
-        c_couple = self.model.get_numba_coupling()
-        c_update = self.coupling.get_numba_update()
-        c_sample = self.coupling.get_numba_sample()
+        m_couple = self.model.get_numba_coupling()
+        h_update = self.history.get_numba_update()
+        h_sample = self.history.get_numba_sample()
         i_scheme = self.integrator.get_numba_scheme(self.model.get_numba_dfun())
+        # TODO: allow more than 1 monitor? Is really useful?
         m_sample = self.monitors[0].get_numba_sample()
         w_addr, w_shape, w_dtype = addr.get_addr(self.connectivity.weights)
 
         # Uncomment this if you want to debug _sim_loop()
         # w = self.connectivity.weights
-        c_update(0, init_state)
+        h_update(0, init_state)
 
         @nb.njit(nb.void(nb.intc, nb.f8[:, :], nb.f8[:, :]))
         def _sim_loop(n_steps: nb.intc, state: NDA_f8_2d, observed: NDA_f8_2d):
             w = nb.carray(address_as_void_pointer(w_addr), w_shape, dtype=w_dtype)
             for step in range(1, n_steps + 1):
-                previous_state = c_sample(step)
-                cpl = c_couple(w, previous_state)
+                previous_state = h_sample(step)
+                cpl = m_couple(w, previous_state)
                 new_state, new_observed = i_scheme(state, cpl)
-                c_update(step, new_state)
+                h_update(step, new_state)
                 m_sample(step-1, new_state, new_observed)
                 state = new_state
 
