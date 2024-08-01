@@ -5,12 +5,13 @@ import random
 import time
 
 import h5py
-import hdf5storage as sio
 import numpy as np
 from matplotlib import pyplot as plt
 
 from neuronumba.bold import BoldStephan2008
-from neuronumba.bold.filters import BandPassFilter
+from neuronumba.numba_tools import hdf
+from neuronumba.tools import filterps
+from neuronumba.tools.filters import BandPassFilter
 from neuronumba.observables import PhFCD
 
 # Local module
@@ -19,12 +20,22 @@ from neuronumba.observables.accumulators import ConcatenatingAccumulator
 from neuronumba.observables.measures import KolmogorovSmirnovStatistic
 from neuronumba.simulator.connectivity import Connectivity
 from neuronumba.simulator.coupling import CouplingNoDelays
-from neuronumba.simulator.integrators.euler import EulerStochastic
+from neuronumba.simulator.integrators.euler import EulerDeterministic, EulerStochastic
 from neuronumba.simulator.models.hopf import Hopf
 from neuronumba.simulator.monitors import RawSubSample
 from neuronumba.simulator.simulator import Simulator
 
-sampling_period = 1.0 # ms
+tr = 2.0
+dtt = 2.0
+t_min = 10.0 * tr
+sampling_period = tr
+warmup_factor = 606.0/2000.0
+t_max_neuronal = None
+t_warmup = None
+
+# Hopf parameters
+omega = None
+a = -0.02
 
 # Here you shoud use the path to your data
 cwd = os.path.dirname(os.path.abspath(__file__))
@@ -104,7 +115,7 @@ def sim_hopf(weights, we, obs_var):
     lengths = np.random.rand(n_rois, n_rois)*10.0 + 1.0
     speed = 1.0
     con = Connectivity(weights=weights, lengths=lengths, speed=speed)
-    m = Hopf(g=we, weights=weights)
+    m = Hopf(a=a, omega=omega, g=we, weights=weights)
     dt = 0.1
     # integ = EulerDeterministic(dt=dt)
     integ = EulerStochastic(dt=dt, sigmas=np.r_[1e-3, 1e-3])
@@ -115,16 +126,24 @@ def sim_hopf(weights, we, obs_var):
     monitor = RawSubSample(period=sampling_period, state_vars=m.get_state_sub([obs_var]), obs_vars=m.get_observed_sub())
     s = Simulator(connectivity=con, model=m, coupling=coupling, integrator=integ, monitors=[monitor])
     start_time = time.perf_counter()
-    s.run(0, 440000)
+    s.run(0, t_max_neuronal + t_warmup)
     t_sim = time.perf_counter() - start_time
-    return t_sim, monitor.data(obs_var)
+    data = monitor.data(obs_var)
+    # fig, ax = plt.subplots()
+    # ax.plot(np.arange(data.shape[0]), data)
+    # plt.show()
+    data_from = int(data.shape[0] * t_warmup / (t_max_neuronal + t_warmup))
+    return t_sim, data[data_from:, :]
 
 
 def simulate_single_subject(weights, we, obs_var):
     t, signal = sim_hopf(weights, we, obs_var)
-    b = BoldStephan2008()
-    bold = b.compute_bold(signal, sampling_period)
-    return bold
+    n_min = int(np.round(t_min / dtt))
+    step = int(np.round(tr/dtt))
+    # No need for a BOLD simulation, the result of the model directly can be used as BOLD signal
+    # Discard the first n_min samples
+    bds = signal[n_min+step-1::step, :]
+    return bds
 
 
 def process_bold_signals(bold_signals, observables):
@@ -148,7 +167,7 @@ def process_bold_signals(bold_signals, observables):
         for ds in observables:  # Now, let's compute each measure and store the results
             measure = observables[ds][0]
             accumulator = observables[ds][1]
-            bpf = BandPassFilter(k=2, flp=0.008, fhi=0.08, tr=2.0)
+            bpf = BandPassFilter(k=2, flp=0.008, fhi=0.08, tr=tr)
             bold_filt = bpf.filter(signal.T)
             # FC, swFCD, phFCD, ...
             proc_signal = measure.from_fmri(bold_filt)
@@ -192,7 +211,7 @@ def preprocessing_pipeline(weights, processed,  #, abeta,
     obs_var = 'x'
     num_parms = len(wes)
 
-    num_sim_subjects = 10
+    num_sim_subjects = 20
 
     fitting = {}
     for ds in observables:
@@ -203,10 +222,10 @@ def preprocessing_pipeline(weights, processed,  #, abeta,
         print(f'Staring computation for we={we}')
         out_file = out_file_name_pattern.format(np.round(we, decimals=3))
         if os.path.exists(out_file):
-            sim_measures = sio.loadmat(out_file)
+            sim_measures = hdf.loadmat(out_file)
         else:
             sim_measures = eval_one_param(weights, we, obs_var, observables, num_sim_subjects)
-            sio.savemat(out_file, sim_measures)
+            hdf.savemat(out_file, sim_measures)
 
         for ds in observables:
             fitting[ds][pos] = observables[ds][2].distance(sim_measures[ds], processed[ds])
@@ -230,7 +249,7 @@ def process_empirical_subjects(bold_signals, observables, bpf, verbose=True):
 
     # First, let's create a data structure for the observables operations...
     measureValues = {}
-    for ds, (_, accumulator) in observables.items():
+    for ds, (_, accumulator, _) in observables.items():
         measureValues[ds] = accumulator.init(num_subjects, n_rois)
 
     # Loop over subjects
@@ -241,17 +260,18 @@ def process_empirical_subjects(bold_signals, observables, bpf, verbose=True):
         signal = bold_signals[s]  # LR_version_symm(tc[s])
 
         signal_filt = bpf.filter(signal)
-        for ds, (observable, accumulator) in observables.items():
-            procSignal = observable.from_fmri(signal_filt.T)
+        for ds, (observable, accumulator, _) in observables.items():
+            procSignal = observable.from_fmri(signal_filt)
             measureValues[ds] = accumulator.accumulate(measureValues[ds], pos, procSignal[ds])
 
-    for ds, (observable, accumulator) in observables.items():
+    for ds, (observable, accumulator, _) in observables.items():
         measureValues[ds] = accumulator.postprocess(measureValues[ds])
 
     return measureValues
 
 
 if __name__ == '__main__':
+
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--we-range", nargs=3, help="Parameter sweep range for G", type=float, required=False)
@@ -260,24 +280,32 @@ if __name__ == '__main__':
 
     [wStart, wEnd, wStep] = args.we_range
 
-    plt.rcParams.update({'font.size': 22})
-
     timeseries, listIDs = load_subjects_data(fMRI_rest_path, numSampleSubjects)
+    n_subj, n_rois, t_max = timeseries.shape
+    t_max_neuronal = (t_max - 1) * tr + 30
+    t_warmup = t_max_neuronal/warmup_factor
+
+    bpf = BandPassFilter(k=2, flp=0.008, fhi=0.08, tr=2.0, apply_detrend=True, apply_demean=True)
+    f_diff = filterps.filtPowSpetraMultipleSubjects(timeseries, tr, bpf)  # baseline_group[0].reshape((1,52,193))
+    # f_diff(find(f_diff==0))=mean(f_diff(find(f_diff~=0)))
+    # f_diff[np.where(f_diff == 0)] = np.mean(f_diff[np.where(f_diff != 0)])
+    omega = 2 * np.pi * f_diff
+
+
     all_fMRI = {s: d for s, d in enumerate(timeseries)}
 
     emp_filename = os.path.join(out_file_path, 'fNeuro_emp.mat')
     if os.path.exists(emp_filename):
-        processed = sio.loadmat(emp_filename)
+        processed = hdf.loadmat(emp_filename)
     else:
         observables = {'phFCD': (PhFCD(), ConcatenatingAccumulator(), KolmogorovSmirnovStatistic())}
-        bpf = BandPassFilter(k=2, flp=0.008, fhi=0.08, tr=2.0, apply_detrend=True, apply_demean=True)
         processed = process_empirical_subjects(all_fMRI, observables, bpf)
-        sio.savemat(emp_filename, processed)
+        hdf.savemat(emp_filename, processed)
 
 
     observables = {'phFCD': (PhFCD(), ConcatenatingAccumulator(), KolmogorovSmirnovStatistic())}
 
-    mat0 = sio.loadmat(SC_path)['SC_dbs80FULL']
+    mat0 = hdf.loadmat(SC_path)['SC_dbs80FULL']
     sc_norm = 0.2 * mat0 / mat0.max()
 
     wes = np.arange(wStart, wEnd + wStep, wStep)
