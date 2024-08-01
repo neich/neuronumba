@@ -13,7 +13,7 @@ from numpy import linalg as LA
 # Base class for distance measures
 # --------------------------------------------------------------------------
 class DistMeasure(object):
-    ERROR_VALUE = np.NaN
+    ERROR_VALUE = np.nan
 
     def distance(self, A, B):
         if not (np.isnan(A).any() or np.isnan(B).any()):  # No problems, go ahead!!!
