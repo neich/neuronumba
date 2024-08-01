@@ -3,8 +3,8 @@ import numpy as np
 import numba as nb
 
 from neuronumba.basic.attr import HasAttr, Attr
-from neuronumba.numba_tools.addr import address_as_void_pointer
-from neuronumba.numba_tools.types import ArrF8_2d
+from neuronumba.numba_tools import addr
+from neuronumba.numba_tools.types import NDA_f8_2d
 
 
 class Coupling(HasAttr):
@@ -36,14 +36,22 @@ class CouplingLinearDense(Coupling):
         self.n_time = np.max(self.i_delays) + 1
         self.buffer = np.zeros((len(self.c_vars), self.n_time, self.n_rois))
 
-    def update(self, step, state):
-        self.buffer[:, step % self.n_time, :] = state[self.c_vars]
+    def get_numba_update(self):
+        buffer = self.buffer
+        n_cvars = self.n_cvars
+        c_vars = self.c_vars
+        addr = buffer.ctypes.data
 
-    def couple(self, step):
-        return CouplingLinearDense_couple(step, self.buffer, self.n_time, self.weights, self.i_delays, 
-                                          self.c_vars, self.n_cvars, self.n_rois)
+        @njit(void(intc, f8[:, :]))
+        def c_update(step: intc, state: NDA_f8_2d):
+            data = nb.carray(addr.address_as_void_pointer(addr), buffer.shape,
+                             dtype=buffer.dtype)
+            for i in range(n_cvars):
+                data[i, step % self.n_time, :] = state[c_vars[i], :]
 
-    def get_numba_couple(self):
+        return c_update
+
+    def get_numba_sample(self):
         buffer = self.buffer
         n_time = self.n_time
         weights = self.weights
@@ -54,76 +62,23 @@ class CouplingLinearDense(Coupling):
         g = self.g
 
         @njit
-        def c_couple(step):
-            return g * CouplingLinearDense_couple(step, buffer, n_time, weights, i_delays, c_vars, n_cvars, n_rois)
+        def h_sample(step):
+            time_idx = (step - 1 - i_delays + n_time) % n_time
+            result = np.empty((n_cvars, n_rois))
+            for v in c_vars:
+                delayed_state = np.empty((n_rois, n_rois))
+                for i in range(n_rois):
+                    delayed_state[i] = buffer[v, time_idx[i], i]
+                result[v] = np.sum(weights * delayed_state, axis=0)
+            return g * result
 
-        return c_couple
-
-
-@njit(f8[:,:](intc, f8[:,:,:], intc, f8[:,:], int32[:,:], int32[:], intc, intc))
-def CouplingLinearDense_couple(step, buffer, n_time, weights, i_delays, c_vars, n_cvars, n_rois):
-    time_idx = (step - 1 - i_delays + n_time) % n_time
-    result = np.empty((n_cvars, n_rois))
-    for v in c_vars:
-        delayed_state = np.empty((n_rois, n_rois))
-        for i in range(n_rois):
-            delayed_state[i] = buffer[v, time_idx[i], i]
-        result[v] = np.sum(weights * delayed_state, axis=0)
-    return result
+        return h_sample
 
 
-class CouplingLinearNoDelays(Coupling):
-
-    # Global linear coupling
-    g = Attr(default=None, required=True)
-
-    n_cvars = Attr(dependant=True)
-    n_rois = Attr(dependant=True)
-    buffer = Attr(dependant=True)
-
-    def _init_dependant(self):
-        super()._init_dependant()
-        self.buffer = np.zeros((1, self.n_cvars, self.n_rois), dtype=np.float64)
-
-    def get_numba_couple(self):
-        buffer = self.buffer
-        addr = buffer.ctypes.data
-        weights = self.weights
-        n_cvars = self.n_cvars
-        n_rois = self.n_rois
-        g = self.g
-
-        @njit(f8[:, :](intc))
-        def c_couple(step: intc):
-            data = nb.carray(address_as_void_pointer(addr), buffer.shape,
-                             dtype=buffer.dtype)
-            result = np.empty((n_cvars, n_rois), dtype=np.float64)
-            for i in range(n_cvars):
-                r = weights @ data[0, i, :]
-                result[i, :] = r
-            return result * g
-
-        return c_couple
-
-    def get_numba_update(self):
-        buffer = self.buffer
-        n_cvars = self.n_cvars
-        c_vars = self.c_vars
-        addr = buffer.ctypes.data
-
-        @njit(void(intc, f8[:, :]))
-        def c_update(step: intc, state: ArrF8_2d):
-            data = nb.carray(address_as_void_pointer(addr), buffer.shape,
-                             dtype=buffer.dtype)
-            for i in range(n_cvars):
-                data[0, i, :] = state[c_vars[i], :]
-
-        return c_update
 
 
 class CouplingNoDelays(Coupling):
 
-    c_func = Attr(required=True)
     n_cvars = Attr(dependant=True)
     n_rois = Attr(dependant=True)
     buffer = Attr(dependant=True)
@@ -133,25 +88,15 @@ class CouplingNoDelays(Coupling):
         super()._init_dependant()
         self.buffer = np.zeros((1, self.n_cvars, self.n_rois), dtype=np.float64)
 
-    def get_numba_couple(self):
-        buffer = self.buffer
-        addr = buffer.ctypes.data
-        weights = self.weights
-        n_cvars = self.n_cvars
-        n_rois = self.n_rois
-        c_func = self.c_func
+    def get_numba_sample(self):
+        b_addr, b_shape, b_dtype = addr.get_addr(self.buffer)
 
         @njit(f8[:, :](intc))
-        def c_couple(step: intc):
-            data = nb.carray(address_as_void_pointer(addr), buffer.shape,
-                             dtype=buffer.dtype)
-            result = np.empty((n_cvars, n_rois), dtype=np.float64)
-            for i in range(n_cvars):
-                r = c_func(weights, data[0, i, :])
-                result[i, :] = r
-            return result
+        def c_sample(step: intc):
+            b = nb.carray(addr.address_as_void_pointer(b_addr), b_shape, dtype=b_dtype)
+            return b[0, :, :]
 
-        return c_couple
+        return c_sample
 
     def get_numba_update(self):
         buffer = self.buffer
@@ -160,8 +105,8 @@ class CouplingNoDelays(Coupling):
         addr = buffer.ctypes.data
 
         @njit(void(intc, f8[:, :]))
-        def c_update(step: intc, state: ArrF8_2d):
-            data = nb.carray(address_as_void_pointer(addr), buffer.shape,
+        def c_update(step: intc, state: NDA_f8_2d):
+            data = nb.carray(addr.address_as_void_pointer(addr), buffer.shape,
                              dtype=buffer.dtype)
             for i in range(n_cvars):
                 data[0, i, :] = state[c_vars[i], :]
