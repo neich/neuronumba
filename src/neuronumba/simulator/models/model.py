@@ -49,19 +49,11 @@ class Model(HasAttr):
                 raise AttributeError(f"Variable <{v}> is not in the observed list!")
         return {v: (self.observable_vars[v], i) for i, v in enumerate(v_list)}
 
-    def get_numba_coupling(self, g: nb.f8):
+    def get_numba_coupling(self):
         """
-        This is the default coupling for most models, linear coupling using the weights matrix
-
-        :param g: global linear coupling
-        :return:
+        :return: numba function with signature nb.f8[:, :](nb.f8[:, :], nb.f8[:, :]) (weights, state) -> coupling
         """
-        @nb.njit #(nb.f8[:](nb.f8[:, :], nb.f8[:]))
-        def linear_coupling(weights, state):
-            r = weights @ state
-            return r * g
-
-        return linear_coupling
+        raise NotImplementedError
 
     def as_array(self, param):
         if isinstance(param, np.ndarray):
@@ -90,7 +82,7 @@ class LinearCouplingModel(Model):
 
         g = self.g
 
-        @nb.njit #(nb.f8[:](nb.f8[:, :], nb.f8[:]))
+        @nb.njit(nb.f8[:, :](nb.f8[:, :], nb.f8[:, :]))
         def linear_coupling(weights, state):
             r = weights @ state
             return r * g
