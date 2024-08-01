@@ -101,19 +101,17 @@ class Hopf(Model):
         :return:
         """
         wt_addr, wt_shape, wt_dtype = addr.get_addr(self.weights_t)
-        w_addr = self.weights.ctypes.data
-        w_shape = self.weights.shape
-        w_dtype = self.weights.dtype
+        g = self.g
         ink = self.ink
         # Uncomment this if you want to debug the coupling function
         # wt = self.weights_t
 
-        @nb.njit #(nb.f8[:, :](nb.f8[:, :], nb.f8[:, :]))
+        @nb.njit(nb.f8[:, :](nb.f8[:, :], nb.f8[:, :]))
         def hopf_coupling(weights, state):
-            # Comment the next 2 llines if you want to debug this function
+            # Comment the next 2 lines if you want to debug this function
             wt = nb.carray(address_as_void_pointer(wt_addr), wt_shape, dtype=wt_dtype)
             r = np.dot(state, wt)
-            return r - ink * state
+            return g * (r - ink * state)
 
         return hopf_coupling
 
