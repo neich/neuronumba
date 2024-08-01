@@ -180,18 +180,6 @@ class BoldStephan2008(Bold):
         return bds
 
 
-# @njit
-# def isclose(a,b):
-#     return np.absolute(a - b) <= (atol + rtol * np.absolute(b))
-
-
-def computeRequiredVectorLength(T):
-    global t_min, dt
-    n_min = int(np.round(t_min / dt))
-    n_t = int(T/dt)
-    return n_t - n_min
-
-
 
 
 
