@@ -2,8 +2,9 @@ import numpy as np
 import numba as nb
 
 from neuronumba.basic.attr import HasAttr, Attr
+from neuronumba.numba_tools import addr
 from neuronumba.numba_tools.addr import address_as_void_pointer
-from neuronumba.numba_tools.types import ArrF8_2d
+from neuronumba.numba_tools.types import NDA_f8_2d
 
 
 class Monitor(HasAttr):
@@ -76,11 +77,11 @@ class RawSubSample(Monitor):
         self.n_interim_samples = int(self.period / self.dt)
         time_samples = 1 + int(self.t_max / self.period)
         if self.n_state_vars:
-            self.buffer_state = np.empty((time_samples, self.n_state_vars, self.n_rois))
+            self.buffer_state = np.zeros((time_samples, self.n_state_vars, self.n_rois))
         else:
             self.buffer_state = np.empty(1, )
         if self.n_obs_vars:
-            self.buffer_observed = np.empty((time_samples, self.n_obs_vars, self.n_rois))
+            self.buffer_observed = np.zeros((time_samples, self.n_obs_vars, self.n_rois))
         else:
             self.buffer_observed = np.empty(1, )
 
@@ -91,31 +92,29 @@ class RawSubSample(Monitor):
         return self.buffer_observed[:, index, :]
 
     def get_numba_sample(self):
-        buffer_state = self.buffer_state
-        addr_state = buffer_state.ctypes.data
+        bs = self.buffer_state
+        bs_addr, bs_shape, bs_dtype = addr.get_addr(bs)
         state_vars = self.state_vars_indices
         n_state = nb.intc(self.n_state_vars)
-        buffer_observed = self.buffer_observed
-        addr_observed = buffer_observed.ctypes.data
+        bo = self.buffer_observed
+        bo_addr, bo_shape, bo_dtype = addr.get_addr(bo)
         obs_vars = self.obs_vars_indices
         n_obs = nb.intc(self.n_obs_vars)
         n_interim_samples = nb.intc(self.n_interim_samples)
 
         @nb.njit(nb.void(nb.intc, nb.f8[:, :], nb.f8[:, :]))
-        def m_sample(step: nb.intc, state: ArrF8_2d, observed: ArrF8_2d):
+        def m_sample(step: nb.intc, state: NDA_f8_2d, observed: NDA_f8_2d):
             if step % n_interim_samples == 0:
                 if n_state > 0:
-                    bnb_state = nb.carray(address_as_void_pointer(addr_state), buffer_state.shape,
-                                          dtype=buffer_state.dtype)
+                    bs = nb.carray(address_as_void_pointer(bs_addr), bs_shape, dtype=bs_dtype)
                     i = nb.intc(step / n_interim_samples)
                     for v in range(n_state):
-                        bnb_state[i, v, :] = state[state_vars[v], :]
+                        bs[i, v, :] = state[state_vars[v], :]
                 if n_obs > 0:
-                    bnb_obs = nb.carray(address_as_void_pointer(addr_observed), buffer_observed.shape,
-                                        dtype=buffer_observed.dtype)
+                    bo = nb.carray(address_as_void_pointer(bo_addr), bo_shape, dtype=bo_dtype)
                     i = nb.intc(step / n_interim_samples)
                     for v in range(n_obs):
-                        bnb_obs[i, v, :] = observed[obs_vars[v], :]
+                        bo[i, v, :] = observed[obs_vars[v], :]
 
         return m_sample
 
@@ -170,7 +169,7 @@ class TemporalAverage(Monitor):
         n_interim_samples = nb.intc(self.n_interim_samples)
 
         @nb.njit(nb.void(nb.intc, nb.f8[:, :], nb.f8[:, :]))
-        def m_sample(step: nb.intc, state: ArrF8_2d, observed: ArrF8_2d):
+        def m_sample(step: nb.intc, state: NDA_f8_2d, observed: NDA_f8_2d):
             # Update interim buffer
             if n_state > 0:
                 i_bnb_state = nb.carray(address_as_void_pointer(addr_i_state), i_buffer_state.shape,
