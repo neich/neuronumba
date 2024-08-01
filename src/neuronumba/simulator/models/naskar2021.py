@@ -33,7 +33,7 @@ import numba as nb
 
 from neuronumba.basic.attr import Attr, AttrType
 from neuronumba.numba_tools.addr import address_as_void_pointer
-from neuronumba.numba_tools.types import ArrF8_2d
+from neuronumba.numba_tools.types import NDA_f8_2d
 from neuronumba.simulator.models import Model
 from neuronumba.simulator.models import LinearCouplingModel
 
@@ -107,7 +107,7 @@ class Naskar2021(LinearCouplingModel):
         P = self.P
 
         @nb.njit(nb.types.UniTuple(nb.f8[:, :], 2)(nb.f8[:, :], nb.f8[:, :]))
-        def Naskar2021_dfun(state: ArrF8_2d, coupling: ArrF8_2d):
+        def Naskar2021_dfun(state: NDA_f8_2d, coupling: NDA_f8_2d):
             # Comment this line if you deactivate @nb.njit for debugging
             m = nb.carray(address_as_void_pointer(m_addr), m_shape, dtype=m_dtype)
 
