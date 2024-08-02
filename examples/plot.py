@@ -9,7 +9,7 @@ import numpy as np
 import os.path
 import matplotlib.pyplot as plt
 
-from neuronumba.numba_tools import hdf
+from neuronumba.tools import hdf
 from neuronumba.observables.measures import KolmogorovSmirnovStatistic
 
 

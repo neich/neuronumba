@@ -6,12 +6,9 @@ import time
 
 import h5py
 import numpy as np
-from matplotlib import pyplot as plt
 from pathos.multiprocessing import ProcessPool
 
-from neuronumba.bold import BoldStephan2008
-from neuronumba.numba_tools import hdf
-from neuronumba.tools import filterps
+from neuronumba.tools import filterps, hdf
 from neuronumba.tools.filters import BandPassFilter
 from neuronumba.observables import PhFCD
 
@@ -21,7 +18,7 @@ from neuronumba.observables.accumulators import ConcatenatingAccumulator
 from neuronumba.observables.measures import KolmogorovSmirnovStatistic
 from neuronumba.simulator.connectivity import Connectivity
 from neuronumba.simulator.history import HistoryNoDelays
-from neuronumba.simulator.integrators.euler import EulerDeterministic, EulerStochastic
+from neuronumba.simulator.integrators.euler import EulerStochastic
 from neuronumba.simulator.models.hopf import Hopf
 from neuronumba.simulator.monitors import RawSubSample
 from neuronumba.simulator.simulator import Simulator
