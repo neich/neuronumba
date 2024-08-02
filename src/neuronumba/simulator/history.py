@@ -1,4 +1,3 @@
-from numba import f8, int32, njit, intc, void
 import numpy as np
 import numba as nb
 
@@ -42,8 +41,8 @@ class HistoryDense(History):
         c_vars = self.c_vars
         addr = buffer.ctypes.data
 
-        @njit(void(intc, f8[:, :]))
-        def c_update(step: intc, state: NDA_f8_2d):
+        @nb.njit(nb.void(nb.intc, nb.f8[:, :]))
+        def c_update(step: nb.intc, state: NDA_f8_2d):
             data = nb.carray(addr.address_as_void_pointer(addr), buffer.shape,
                              dtype=buffer.dtype)
             for i in range(n_cvars):
@@ -61,7 +60,7 @@ class HistoryDense(History):
         n_rois = self.n_rois
         g = self.g
 
-        @njit
+        @nb.njit(nb.f8[:, :](nb.intc))
         def h_sample(step):
             time_idx = (step - 1 - i_delays + n_time) % n_time
             result = np.empty((n_cvars, n_rois))
@@ -86,15 +85,17 @@ class HistoryNoDelays(History):
 
     def _init_dependant(self):
         super()._init_dependant()
-        self.buffer = np.zeros((1, self.n_cvars, self.n_rois), dtype=np.float64)
+        self.buffer = np.zeros((self.n_cvars, self.n_rois), dtype=np.float64)
 
     def get_numba_sample(self):
         b_addr, b_shape, b_dtype = addr.get_addr(self.buffer)
+        # Uncomment this line to debug c_update()
+        # b = self.buffer
 
-        @njit(f8[:, :](intc))
-        def c_sample(step: intc):
+        @nb.njit(nb.f8[:, :](nb.intc))
+        def c_sample(step: nb.intc):
             b = nb.carray(addr.address_as_void_pointer(b_addr), b_shape, dtype=b_dtype)
-            return b[0, :, :]
+            return b.copy()
 
         return c_sample
 
@@ -105,10 +106,10 @@ class HistoryNoDelays(History):
         # Uncomment this line to debug c_update()
         # b = self.buffer
 
-        @njit(void(intc, f8[:, :]))
-        def c_update(step: intc, state: NDA_f8_2d):
+        @nb.njit(nb.void(nb.intc, nb.f8[:, :]))
+        def c_update(step: nb.intc, state: NDA_f8_2d):
             b = nb.carray(addr.address_as_void_pointer(b_addr), b_shape, dtype=b_dtype)
             for i in range(n_cvars):
-                b[0, i, :] = state[c_vars[i], :]
+                b[i, :] = state[c_vars[i], :]
 
         return c_update
