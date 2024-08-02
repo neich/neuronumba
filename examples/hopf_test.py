@@ -7,6 +7,7 @@ import time
 import h5py
 import numpy as np
 from matplotlib import pyplot as plt
+from pathos.multiprocessing import ProcessPool
 
 from neuronumba.bold import BoldStephan2008
 from neuronumba.numba_tools import hdf
@@ -124,7 +125,7 @@ def sim_hopf(weights, we, obs_var):
     history = HistoryNoDelays(weights=weights)
     # mnt = TemporalAverage(period=1.0, dt=dt)
     monitor = RawSubSample(period=sampling_period, state_vars=m.get_state_sub([obs_var]), obs_vars=m.get_observed_sub())
-    s = Simulator(connectivity=con, model=m, coupling=history, integrator=integ, monitors=[monitor])
+    s = Simulator(connectivity=con, model=m, history=history, integrator=integ, monitors=[monitor])
     start_time = time.perf_counter()
     s.run(0, t_max_neuronal + t_warmup)
     t_sim = time.perf_counter() - start_time
@@ -218,26 +219,36 @@ def preprocessing_pipeline(weights, processed,  #, abeta,
         fitting[ds] = np.zeros((num_parms))
 
     out_file_name_pattern = os.path.join(out_file_path, 'fitting_we{}.mat')
-    for pos, we in enumerate(wes):
-        print(f'Staring computation for we={we}')
-        out_file = out_file_name_pattern.format(np.round(we, decimals=3))
-        if os.path.exists(out_file):
-            sim_measures = hdf.loadmat(out_file)
-        else:
-            sim_measures = eval_one_param(weights, we, obs_var, observables, num_sim_subjects)
-            hdf.savemat(out_file, sim_measures)
 
-        for ds in observables:
-            fitting[ds][pos] = observables[ds][2].distance(sim_measures[ds], processed[ds])
-            print(f" {ds}: {fitting[ds][pos]};", end='', flush=True)
+    pool = ProcessPool(nodes=10)
+    rn = list(range(len(wes)))
+    ns = [num_sim_subjects for _ in rn]
+    ov = [obs_var for _ in rn]
+    ob = [observables for _ in rn]
+    of = [out_file_name_pattern for _ in rn]
+    pr = [processed for _ in rn]
+    wt = [weights for _ in rn]
+    results = pool.map(compute_we, ns, ov, ob, of, pr, wes, wt)
+
+    return results
 
 
-    optimal = {}
-    for sd in observables:
-        optim = observables[sd][0].findMinMax(fitting[sd])
-        optimal[sd] = (optim[0], optim[1], balanced_parms[optim[1]])
-    return optimal
+def compute_we(num_sim_subjects, obs_var, observables, out_file_name_pattern, processed, we, weights):
+    result = {}
+    out_file = out_file_name_pattern.format(np.round(we, decimals=3))
+    if os.path.exists(out_file):
+        print(f"Loading previous data for we={we}")
+        sim_measures = hdf.loadmat(out_file)
+    else:
+        print(f"Starting computation for we={we}")
+        sim_measures = eval_one_param(weights, we, obs_var, observables, num_sim_subjects)
+        hdf.savemat(out_file, sim_measures)
+    for ds in observables:
+        result[ds] = observables[ds][2].distance(sim_measures[ds], processed[ds])
 
+        print(f" {ds} for we={we}: {result[ds]};", end='', flush=True)
+
+    return result
 
 def process_empirical_subjects(bold_signals, observables, bpf, verbose=True):
     # Process the BOLD signals
@@ -315,5 +326,5 @@ if __name__ == '__main__':
                               WEs=wes, weName='we',
                               empFilePath=out_file_path+'/fNeuro_emp.mat')
 
-    print (f"Last info: Optimal in the CONSIDERED INTERVAL only: {wStart}, {wEnd}, {wStep} (not in the whole set of results!!!)")
-    print("".join(f" - Optimal {k}({optimal[k][2]})={optimal[k][0]}\n" for k in optimal))
+    # print (f"Last info: Optimal in the CONSIDERED INTERVAL only: {wStart}, {wEnd}, {wStep} (not in the whole set of results!!!)")
+    # print("".join(f" - Optimal {k}({optimal[k][2]})={optimal[k][0]}\n" for k in optimal))
