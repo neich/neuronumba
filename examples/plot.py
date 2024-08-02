@@ -6,21 +6,24 @@
 # ==========================================================================
 # ==========================================================================
 import numpy as np
-import hdf5storage as sio
 import os.path
 import matplotlib.pyplot as plt
+
+from neuronumba.numba_tools import hdf
+from neuronumba.observables.measures import KolmogorovSmirnovStatistic
 
 
 def plot_fitting(ax, WEs, fitting, distanceSettings, title, graphLabel=None):
     print("\n\n#####################################################################################################")
     print(f"# Results (in ({WEs[0]}, {WEs[-1]}):")
     for ds in distanceSettings:
-        optimValDist = distanceSettings[ds][0].findMinMax(fitting[ds])
-        print(f"# - Optimal {ds} = {optimValDist[0]} @ {np.round(WEs[optimValDist[1]], decimals=3)}")
+        optim_i = np.argmin(fitting[ds])
+        optim_v = fitting[ds][optim_i]
+        print(f"# - Optimal {ds} = {optim_v} @ {np.round(WEs[optim_i], decimals=3)}")
 
         # color = next(ax._get_lines.prop_cycler)['color']
         plotFCpla, = ax.plot(WEs, fitting[ds])  #, color=color)
-        ax.axvline(x=WEs[optimValDist[1]], ls='--')  #, c=color)
+        ax.axvline(x=WEs[optim_i], ls='--')  #, c=color)
         if graphLabel is None:
             plotFCpla.set_label(ds)
         else:
@@ -45,12 +48,13 @@ def load_and_plot_ax(ax, filePath,
                   empFilePath=None,
                   graphLabel=None):
     def process_file(fileName, ds):
-        simValues = sio.loadmat(fileName)
+        simValues = hdf.loadmat(fileName)
         we = simValues[weName]
         # ---- and now compute the final FC and FCD distances for this G (we)!!! ----
         print(f" Loaded {fileName}:", end='', flush=True)
+        measure = KolmogorovSmirnovStatistic()
         if empFilePath is not None:
-            measure = distanceSettings[ds][0]  # FC, swFCD, phFCD, ...
+            observable = distanceSettings[ds][0]  # FC, swFCD, phFCD, ...
             dist = measure.distance(empValues[ds], simValues[ds])
         else:
             dist = simValues[ds]
@@ -60,7 +64,7 @@ def load_and_plot_ax(ax, filePath,
 
     # ==============================================
     if empFilePath is not None:
-        processed = sio.loadmat(empFilePath)
+        processed = hdf.loadmat(empFilePath)
         empValues = {}
         for ds in distanceSettings:
             empValues[ds] = processed[ds]
