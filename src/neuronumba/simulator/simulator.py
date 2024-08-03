@@ -24,7 +24,7 @@ class Simulator(HasAttr):
         self.integrator.configure()
         self.connectivity.configure()
         self.model.configure(weights=self.connectivity.weights)
-        self.history.configure(c_vars=self.model.c_vars)
+        self.history.configure(c_vars=self.model.c_vars, weights=self.connectivity.weights)
 
         dt = self.integrator.dt
         t_max = t_end - t_start
