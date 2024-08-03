@@ -98,19 +98,12 @@ class Naskar2021(LinearCouplingModel):
         return observed
 
     def get_numba_dfun(self):
-        m_addr = self.m.ctypes.data
-        m_shape = self.m.shape
-        m_dtype = self.m.dtype
-        # Uncomment this is you deactivate @nb.njit for debugging
-        # m = self.m
+        m = self.m.copy()
         # IMPORTANT: you have to add this line here in ALL get_numba_dfun() implementations
         P = self.P
 
         @nb.njit(nb.types.UniTuple(nb.f8[:, :], 2)(nb.f8[:, :], nb.f8[:, :]))
         def Naskar2021_dfun(state: NDA_f8_2d, coupling: NDA_f8_2d):
-            # Comment this line if you deactivate @nb.njit for debugging
-            m = nb.carray(address_as_void_pointer(m_addr), m_shape, dtype=m_dtype)
-
             Se = np.clip(state[0, :], 0.0, 1.0)
             Si = np.clip(state[1, :], 0.0, 1.0)
             J = state[2, :]
