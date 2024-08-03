@@ -7,7 +7,6 @@
 # #--------------------------------------------------------------------------
 import numpy as np
 
-from neuronumba.tools.filters import BandPassFilter
 
 def conv(u, v):  # python equivalent to matlab conv 'same' method
     # from https://stackoverflow.com/questions/38194270/matlab-convolution-same-to-numpy-convolve
@@ -79,7 +78,7 @@ def filt_pow_spetra(signal, TR, bpf):
     return PowSpect_filt_narrow
 
 
-def filtPowSpetraMultipleSubjects(signal, tr, bpf):
+def filt_pow_spetra_multiple_subjects(signal, tr, bpf):
     if signal.ndim == 2:
         nSubjects = 1
         nNodes, Tmax = signal.shape  # Here we are assuming we receive only ONE subject...
