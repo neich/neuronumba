@@ -52,7 +52,7 @@ class BoldStephan2008(Bold):
             return np.absolute(a - b) <= (atol + rtol * np.absolute(b))
 
         @njit
-        def Bold_Stephan2008_compute_bold(total_time, signal):
+        def Bold_Stephan2008_compute_bold(signal):
             # The Hemodynamic model with one simplified neural activity
             #
             # T          : total time (s)
@@ -75,6 +75,7 @@ class BoldStephan2008(Bold):
 
             # global t_min, dt
             # global Eo
+            total_time = signal.shape[0] * dt
             dtt = dt / 1000.0 # All the constants are expressed in seconds, while dt is in milliseconds
             n_min = int(np.round(t_min / dtt))
             itau = 1 / tau
@@ -84,21 +85,21 @@ class BoldStephan2008(Bold):
             n_t = int(total_time / dt) # total_time is an external parameter, and hence is expressed in milliseconds
 
             # Euler method
-            s = np.zeros((n_t, N));  # stilde = np.zeros(n_t)
-            f = np.zeros((n_t, N));
-            ftilde = np.zeros((n_t, N))
-            v = np.zeros((n_t, N));
-            vtilde = np.zeros((n_t, N))
-            q = np.zeros((n_t, N));
-            qtilde = np.zeros((n_t, N))
+            s = np.zeros((2, N))
+            f = np.zeros((2, N))
+            ftilde = np.zeros((2, N))
+            vtilde = np.zeros((2, N))
+            qtilde = np.zeros((2, N))
+            v = np.zeros((n_t, N))
+            q = np.zeros((n_t, N))
             # Initial conditions x0 = np.array([0, 1, 1, 1]) <- they should have been all 0...
-            s[0] = 1;
-            f[0] = 1;
-            v[0] = 1;
+            s[0] = 1
+            f[0] = 1
+            v[0] = 1
             q[0] = 1
-            ftilde[0] = 0;
-            vtilde[0] = 0;
-            qtilde[0] = 0;  # stilde[0] = 0
+            ftilde[0] = 0
+            vtilde[0] = 0
+            qtilde[0] = 0
             for n in range(n_t - 1):
                 # # The original equations in [Stephan et al. 2007]
                 # s[n+1] = s[n] + dt * (x[n] - kappa * s[n] - gamma * (f[n] - 1))  # Equation (9) for s.
@@ -116,29 +117,36 @@ class BoldStephan2008(Bold):
                 # Warning! The DCM code applies this change of variables only to {f,v,q}, not s...
                 # This means that equation A6 in [Stephan2008] is NOT used, but Equation (9) in [Stephan2007] instead...
                 # Changes in vasodilatory signalling s:
-                s[n + 1] = s[n] + dtt * (signal[n] - kappa * s[n] - gamma * (f[n] - 1))
+                s[1] = s[0] + dtt * (signal[n] - kappa * s[0] - gamma * (f[0] - 1))
                 # Equation (10) for f in [Stephan et al. 2007]. Now, changed to eq. A7 in [Stephan2008]
                 # Changes in blood flow f :
-                f[n] = np.clip(f[n], 1, None)
-                ftilde[n + 1] = ftilde[n] + dtt * (s[n] / f[n])
+                f[0] = np.clip(f[0], 1, None)
+                ftilde[1] = ftilde[0] + dtt * (s[0] / f[0])
                 # Equation (8)-1st for v in [Stephan et al. 2007]. Now, changed to eq. A8 in [Stephan2008]
                 # Changes in venous blood volume v:
                 # if isclose(v[n], 0.):
                 #     # print("v[n] is close to 0")
                 #     v[n] = 1e-8
                 fv = v[n] ** ialpha  # outflow
-                vtilde[n + 1] = vtilde[n] + dtt * ((f[n] - fv) / (tau * v[n]))
+                vtilde[1] = vtilde[0] + dtt * ((f[0] - fv) / (tau * v[n]))
                 # Equation (8)-2nd for q in [Stephan et al. 2007]. Now, changed to eq. A9 in [Stephan2008]
                 # Changes in deoxyhemoglobin content q:
                 q[n] = np.clip(q[n], 0.01, None)
-                ff = (1 - (1 - Eo) ** (1 / f[n])) / Eo  # oxygen extraction
-                qtilde[n + 1] = qtilde[n] + dtt * ((f[n] * ff - fv * q[n] / v[n]) / (tau * q[n]))
+                ff = (1 - (1 - Eo) ** (1 / f[0])) / Eo  # oxygen extraction
+                qtilde[1] = qtilde[0] + dtt * ((f[0] * ff - fv * q[n] / v[n]) / (tau * q[n]))
 
                 # Now, exponentiate to get the "good" hemodynamic variables...
                 # s[n+1] = np.exp(stilde[n+1])
-                f[n + 1] = np.exp(ftilde[n + 1])
-                v[n + 1] = np.exp(vtilde[n + 1])
-                q[n + 1] = np.exp(qtilde[n + 1])
+                f[1] = np.exp(ftilde[1])
+                v[n + 1] = np.exp(vtilde[1])
+                q[n + 1] = np.exp(qtilde[1])
+
+
+                f[0] = f[1]
+                s[0] = s[1]
+                ftilde[0] = ftilde[1]
+                vtilde[0] = vtilde[1]
+                qtilde[0] = qtilde[1]
                 # ============== DEBUG CODE, enable only in non-Numba mode!
                 # if np.isnan([f,v,q]).any():
                 #     print(f'full NaN stop @ {n}!')
@@ -162,7 +170,6 @@ class BoldStephan2008(Bold):
 
         atol = self.atol
         rtol = self.rtol
-        total_time = signal.shape[0] * dt
         kappa = self.kappa
         gamma = self.gamma
         tau = self.tau
@@ -174,7 +181,7 @@ class BoldStephan2008(Bold):
         r0 = self.r0
         theta0 = self.theta0
         t_min = self.t_min
-        b = Bold_Stephan2008_compute_bold(total_time, signal)
+        b = Bold_Stephan2008_compute_bold(signal)
         step = int(np.round(self.tr / dt))  # each step is the length of the TR, in milliseconds
         bds = b[step - 1::step, :]
         return bds
