@@ -113,10 +113,10 @@ def sim_hopf(weights, we, obs_var):
     lengths = np.random.rand(n_rois, n_rois)*10.0 + 1.0
     speed = 1.0
     con = Connectivity(weights=weights, lengths=lengths, speed=speed)
-    m = Hopf(a=a, omega=omega, g=we, weights=weights)
+    m = Hopf(a=a, omega=omega, g=we)
     dt = 0.1
     # integ = EulerDeterministic(dt=dt)
-    integ = EulerStochastic(dt=dt, sigmas=np.r_[1e-3, 1e-3])
+    integ = EulerStochastic(dt=dt, sigmas=np.r_[1e-2, 1e-2])
 
     # coupling = CouplingLinearDense(weights=weights, delays=con.delays, c_vars=np.array([0], dtype=np.int32), n_rois=n_rois)
     history = HistoryNoDelays(weights=weights)
@@ -294,7 +294,7 @@ if __name__ == '__main__':
     t_warmup = t_max_neuronal/warmup_factor
 
     bpf = BandPassFilter(k=2, flp=0.008, fhi=0.08, tr=2.0, apply_detrend=True, apply_demean=True)
-    f_diff = filterps.filtPowSpetraMultipleSubjects(timeseries, tr, bpf)  # baseline_group[0].reshape((1,52,193))
+    f_diff = filterps.filt_pow_spetra_multiple_subjects(timeseries, tr, bpf)  # baseline_group[0].reshape((1,52,193))
     # f_diff(find(f_diff==0))=mean(f_diff(find(f_diff~=0)))
     # f_diff[np.where(f_diff == 0)] = np.mean(f_diff[np.where(f_diff != 0)])
     omega = 2 * np.pi * f_diff
