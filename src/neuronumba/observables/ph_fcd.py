@@ -11,8 +11,11 @@ class PhFCD(Observable):
     discard_offset = Attr(default=10, required=False)
 
     def _compute_from_fmri(self, bold_signal):  # Compute the FCD of an input BOLD signal
-        pim_matrix = phase_interaction_matrix(bold_signal)  # Compute the Phase-Interaction Matrix
-        return PhFCD_from_fmri(bold_signal.shape[0], bold_signal.shape[1], self.discard_offset, pim_matrix)
+        # Use the transposed array for performance
+        s = bold_signal.T
+        n_rois, t_max = s.shape
+        pim_matrix = phase_interaction_matrix(s)  # Compute the Phase-Interaction Matrix
+        return PhFCD_from_fmri(n_rois, t_max, self.discard_offset, pim_matrix)
 
     # ==================================================================
     # buildFullMatrix: given the output of from_fMRI, this function
