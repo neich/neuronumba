@@ -119,7 +119,7 @@ def sim_hopf(weights, we, obs_var):
     integ = EulerStochastic(dt=dt, sigmas=np.r_[1e-2, 1e-2])
 
     # coupling = CouplingLinearDense(weights=weights, delays=con.delays, c_vars=np.array([0], dtype=np.int32), n_rois=n_rois)
-    history = HistoryNoDelays(weights=weights)
+    history = HistoryNoDelays()
     # mnt = TemporalAverage(period=1.0, dt=dt)
     monitor = RawSubSample(period=sampling_period, state_vars=m.get_state_sub([obs_var]), obs_vars=m.get_observed_sub())
     s = Simulator(connectivity=con, model=m, history=history, integrator=integ, monitors=[monitor])
@@ -149,7 +149,7 @@ def process_bold_signals(bold_signals, observables):
     # BOLDSignals is a dictionary of subjects {subjectName: subjectBOLDSignal}
     # observablesToUse is a dictionary of {observableName: observablePythonModule}
     num_subjects = len(bold_signals)
-    N = bold_signals[next(iter(bold_signals))].shape[0]  # get the first key to retrieve the value of N = number of areas
+    N = bold_signals[next(iter(bold_signals))].shape[1]
 
     # First, let's create a data structure for the observables operations...
     measureValues = {}
@@ -166,7 +166,7 @@ def process_bold_signals(bold_signals, observables):
             measure = observables[ds][0]
             accumulator = observables[ds][1]
             bpf = BandPassFilter(k=2, flp=0.008, fhi=0.08, tr=tr)
-            bold_filt = bpf.filter(signal.T)
+            bold_filt = bpf.filter(signal)
             # FC, swFCD, phFCD, ...
             proc_signal = measure.from_fmri(bold_filt)
             measureValues[ds] = accumulator.accumulate(measureValues[ds], pos, proc_signal[ds])
@@ -265,7 +265,8 @@ def process_empirical_subjects(bold_signals, observables, bpf, verbose=True):
         if verbose:
             print('   Processing signal {}/{} Subject: {} ({}x{})'.format(pos + 1, num_subjects, s, bold_signals[s].shape[0],
                                                                     bold_signals[s].shape[1]), flush=True)
-        signal = bold_signals[s]  # LR_version_symm(tc[s])
+        # BOLD signals from file have inverse shape
+        signal = bold_signals[s].T  # LR_version_symm(tc[s])
 
         signal_filt = bpf.filter(signal)
         for ds, (observable, accumulator, _) in observables.items():
