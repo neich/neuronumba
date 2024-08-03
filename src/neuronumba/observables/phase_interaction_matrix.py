@@ -1,9 +1,9 @@
-from numba import njit, f8, intc
+import numba as nb
 import numpy as np
 from scipy import signal
 
 
-@njit
+@nb.njit
 def adif(a, b):
     if np.abs(a - b) > np.pi:
         c = 2 * np.pi - np.abs(a - b)
@@ -27,7 +27,7 @@ def phase_interaction_matrix(ts, discard_offset=10):
     return _phase_interaction_matrix(ts, phases, discard_offset)
 
 
-@njit(f8[:, :, :](f8[:, :], f8[:, :], intc))
+@nb.njit(nb.f8[:, :, :](nb.f8[:, :], nb.f8[:, :], nb.intc))
 def _phase_interaction_matrix(ts, phases, discard_offset=10):
     n_rois, t_max = ts.shape
     npattmax = t_max - (2 * discard_offset - 1)  # calculates the size of phfcd matrix
