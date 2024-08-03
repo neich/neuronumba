@@ -92,10 +92,11 @@ class HistoryNoDelays(History):
         # Uncomment this line to debug c_update()
         # b = self.buffer
 
-        @nb.njit(nb.f8[:, :](nb.intc))
+        # TODO: why adding the signature raises a numba warning about state_coupled being a non contiguous array?
+        @nb.njit #(nb.f8[:, :](nb.intc))
         def c_sample(step: nb.intc):
             b = nb.carray(addr.address_as_void_pointer(b_addr), b_shape, dtype=b_dtype)
-            return b.copy()
+            return b
 
         return c_sample
 
