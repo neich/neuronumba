@@ -16,13 +16,17 @@ class ParameterEnum(object):
 
 class Model(HasAttr):
 
-    n_rois = Attr(required=True)
+    weights = Attr(required=True)
+    n_rois = Attr(dependant=True)
     m = Attr(dependant=True)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         cls = type(self)
         setattr(cls, 'P', cls._build_parameter_enum())
+
+    def _init_dependant(self):
+        self.n_rois = self.weights.shape[0]
 
     @classmethod
     def _build_var_dict(cls, var_list: list[str]):
@@ -72,6 +76,12 @@ class Model(HasAttr):
 class LinearCouplingModel(Model):
     g = Attr(default=1.0, attr_type=AttrType.Model)
 
+    weights_t = Attr(dependant=True)
+
+    def _init_dependant(self):
+        # Make sure we store a copy and not a view
+        self.weights_t = self.weights.T.copy()
+
     def get_numba_coupling(self):
         """
         This is the default coupling for most models, linear coupling using the weights matrix
@@ -81,10 +91,18 @@ class LinearCouplingModel(Model):
         """
 
         g = self.g
+        wt = self.weights_t.copy()
 
-        @nb.njit(nb.f8[:, :](nb.f8[:, :], nb.f8[:, :]))
-        def linear_coupling(weights, state):
-            r = weights @ state
+        # TODO: why adding the signature raises a numba warning about state_coupled being a non contiguous array?
+        @nb.njit #(nb.f8[:, :](nb.f8[:, :], nb.f8[:, :]))
+        def linear_coupling(state_coupled):
+            """
+
+            :param state_coupled: (n_cvars, n_rois) this is a subset of the full state that
+                                    contains only the variables to couple
+            :return:
+            """
+            r = np.dot(state_coupled, wt)
             return r * g
 
         return linear_coupling
