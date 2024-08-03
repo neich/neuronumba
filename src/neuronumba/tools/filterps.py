@@ -70,7 +70,8 @@ def filt_pow_spetra(signal, TR, bpf):
     # =================== NARROW LOW BANDPASS
     # print(f'BOLD Filters: low={BOLDFilters.flp}, hi={BOLDFilters.fhi}')
     # ts_filt_narrow = zscore(BOLDFilters.BandPassFilter(signal, removeStrongArtefacts=False), axis=0)  # Here we used the zscore to "normalize" the values... not really needed, but makes things easier to follow! ;-)
-    ts_filt_narrow = bpf.filter(signal)
+    # TODO: move all shapes to (n_time_samples, n_rois)
+    ts_filt_narrow = bpf.filter(signal.T).T
     pw_filt_narrow = np.abs(np.fft.fft(ts_filt_narrow, axis=1))
     PowSpect_filt_narrow = pw_filt_narrow[:, 0:int(np.floor(Tmax / 2))].T ** 2 / (Tmax / TR)
 
