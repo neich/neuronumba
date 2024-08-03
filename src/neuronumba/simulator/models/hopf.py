@@ -93,40 +93,25 @@ class Hopf(Model):
         return observed
 
     # Hopf model has a non-standard coupling
-    def get_numba_coupling(self, g=1.0):
-        """
-        This is the default coupling for most models, linear coupling using the weights matrix
-
-        :param g: global linear coupling
-        :return:
-        """
-        wt_addr, wt_shape, wt_dtype = addr.get_addr(self.weights_t)
-        g = self.g
+    def get_numba_coupling(self):
         ink = self.ink
-        # Uncomment this if you want to debug the coupling function
-        # wt = self.weights_t
+        wt = self.weights_t.copy()
+        g = self.g
 
-        @nb.njit(nb.f8[:, :](nb.f8[:, :], nb.f8[:, :]))
-        def hopf_coupling(weights, state):
-            # Comment the next 2 lines if you want to debug this function
-            wt = nb.carray(address_as_void_pointer(wt_addr), wt_shape, dtype=wt_dtype)
+        # TODO: why adding the signature raises a numba warning about state_coupled being a non contiguous array?
+        @nb.njit #(nb.f8[:, :](nb.f8[:, :]))
+        def hopf_coupling(state: NDA_f8_2d):
             r = np.dot(state, wt)
             return g * (r - ink * state)
 
         return hopf_coupling
 
     def get_numba_dfun(self):
-        m_addr = self.m.ctypes.data
-        m_shape = self.m.shape
-        m_dtype = self.m.dtype
-        m = self.m
+        m = self.m.copy()
         P = self.P
 
         @nb.njit(nb.types.UniTuple(nb.f8[:, :], 2)(nb.f8[:, :], nb.f8[:, :]))
         def Hopf_dfun(state: NDA_f8_2d, coupling: NDA_f8_2d):
-            # Comment this line if you deactive @njit for debugging
-            m = nb.carray(address_as_void_pointer(m_addr), m_shape, dtype=m_dtype)
-
             x = state[0, :]
             y = state[1, :]
 
