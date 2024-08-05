@@ -198,6 +198,24 @@ def eval_one_param(weights, we, obs_var, observables, num_subjects):
     return dist
 
 
+def compute_we(num_sim_subjects, obs_var, observables, out_file_name_pattern, processed, we, weights):
+    result = {}
+    out_file = out_file_name_pattern.format(np.round(we, decimals=3))
+    if os.path.exists(out_file):
+        print(f"Loading previous data for we={we}")
+        sim_measures = hdf.loadmat(out_file)
+    else:
+        print(f"Starting computation for we={we}")
+        sim_measures = eval_one_param(weights, we, obs_var, observables, num_sim_subjects)
+        hdf.savemat(out_file, sim_measures)
+    for ds in observables:
+        result[ds] = observables[ds][2].distance(sim_measures[ds], processed[ds])
+
+        print(f" {ds} for we={we}: {result[ds]};", end='', flush=True)
+
+    return result
+
+
 def preprocessing_pipeline(weights, processed,  #, abeta,
                            observables,  # This is a dictionary of {name: (distance module, apply filters bool)}
                            wes):
@@ -205,7 +223,6 @@ def preprocessing_pipeline(weights, processed,  #, abeta,
     print("# Compute ParmSeep")
     print("###################################################################\n")
     # Now, optimize all we (G) values: determine optimal G to work with
-    balanced_parms = [{'we': we} for we in wes]
     obs_var = 'x'
     num_parms = len(wes)
 
@@ -229,23 +246,6 @@ def preprocessing_pipeline(weights, processed,  #, abeta,
 
     return results
 
-
-def compute_we(num_sim_subjects, obs_var, observables, out_file_name_pattern, processed, we, weights):
-    result = {}
-    out_file = out_file_name_pattern.format(np.round(we, decimals=3))
-    if os.path.exists(out_file):
-        print(f"Loading previous data for we={we}")
-        sim_measures = hdf.loadmat(out_file)
-    else:
-        print(f"Starting computation for we={we}")
-        sim_measures = eval_one_param(weights, we, obs_var, observables, num_sim_subjects)
-        hdf.savemat(out_file, sim_measures)
-    for ds in observables:
-        result[ds] = observables[ds][2].distance(sim_measures[ds], processed[ds])
-
-        print(f" {ds} for we={we}: {result[ds]};", end='', flush=True)
-
-    return result
 
 def process_empirical_subjects(bold_signals, observables, bpf, verbose=True):
     # Process the BOLD signals
@@ -294,29 +294,29 @@ if __name__ == '__main__':
     t_max_neuronal = (t_max - 1) * tr + 30
     t_warmup = t_max_neuronal/warmup_factor
 
-    bpf = BandPassFilter(k=2, flp=0.008, fhi=0.08, tr=2.0, apply_detrend=True, apply_demean=True)
+    # -------------------------- Setup Hopf frequencies
+    bpf = BandPassFilter(k=2, flp=0.008, fhi=0.08, tr=tr, apply_detrend=True, apply_demean=True)
     f_diff = filterps.filt_pow_spetra_multiple_subjects(timeseries, tr, bpf)  # baseline_group[0].reshape((1,52,193))
-    # f_diff(find(f_diff==0))=mean(f_diff(find(f_diff~=0)))
-    # f_diff[np.where(f_diff == 0)] = np.mean(f_diff[np.where(f_diff != 0)])
     omega = 2 * np.pi * f_diff
 
+    # -------------------------- Observable definition
+    observables = {'phFCD': (PhFCD(), ConcatenatingAccumulator(), KolmogorovSmirnovStatistic())}
 
     all_fMRI = {s: d for s, d in enumerate(timeseries)}
 
+    # -------------------------- Process (or load) empirical data
     emp_filename = os.path.join(out_file_path, 'fNeuro_emp.mat')
     if os.path.exists(emp_filename):
         processed = hdf.loadmat(emp_filename)
     else:
-        observables = {'phFCD': (PhFCD(), ConcatenatingAccumulator(), KolmogorovSmirnovStatistic())}
         processed = process_empirical_subjects(all_fMRI, observables, bpf)
         hdf.savemat(emp_filename, processed)
 
-
-    observables = {'phFCD': (PhFCD(), ConcatenatingAccumulator(), KolmogorovSmirnovStatistic())}
-
+    # -------------------------- Load SC matrix
     mat0 = hdf.loadmat(SC_path)['SC_dbs80FULL']
     sc_norm = 0.2 * mat0 / mat0.max()
 
+    # -------------------------- Preprocessing pipeline!!!
     wes = np.arange(wStart, wEnd + wStep, wStep)
     optimal = preprocessing_pipeline(sc_norm, processed, observables, wes)
     # =======  Only for quick load'n plot test...
@@ -324,5 +324,3 @@ if __name__ == '__main__':
                               WEs=wes, weName='we',
                               empFilePath=out_file_path+'/fNeuro_emp.mat')
 
-    # print (f"Last info: Optimal in the CONSIDERED INTERVAL only: {wStart}, {wEnd}, {wStep} (not in the whole set of results!!!)")
-    # print("".join(f" - Optimal {k}({optimal[k][2]})={optimal[k][0]}\n" for k in optimal))
