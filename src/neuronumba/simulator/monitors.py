@@ -75,7 +75,8 @@ class RawSubSample(Monitor):
     def _init_dependant(self):
         super()._init_dependant()
         self.n_interim_samples = int(self.period / self.dt)
-        time_samples = 1 + int(self.t_max / self.period)
+        n_steps = int(self.t_max / self.dt)
+        time_samples = 1 + int(n_steps / self.n_interim_samples)
         if self.n_state_vars:
             self.buffer_state = np.zeros((time_samples, self.n_state_vars, self.n_rois))
         else:
@@ -107,12 +108,12 @@ class RawSubSample(Monitor):
             if step % n_interim_samples == 0:
                 if n_state > 0:
                     bs = nb.carray(address_as_void_pointer(bs_addr), bs_shape, dtype=bs_dtype)
-                    i = nb.intc(step / n_interim_samples)
+                    i = int(step / n_interim_samples)
                     for v in range(n_state):
                         bs[i, v, :] = state[state_vars[v], :]
                 if n_obs > 0:
                     bo = nb.carray(address_as_void_pointer(bo_addr), bo_shape, dtype=bo_dtype)
-                    i = nb.intc(step / n_interim_samples)
+                    i = int(step / n_interim_samples)
                     for v in range(n_obs):
                         bo[i, v, :] = observed[obs_vars[v], :]
 
