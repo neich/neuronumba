@@ -29,7 +29,7 @@ class Simulator(HasAttr):
         dt = self.integrator.dt
         t_max = t_end - t_start
 
-        n_steps = int((t_end - t_start) / dt)
+        n_steps = int(t_max / dt)
         n_rois = self.connectivity.n_rois
         init_state = self.model.initial_state(n_rois)
         self._state_shape = (int(self.model.n_state_vars), n_rois)
