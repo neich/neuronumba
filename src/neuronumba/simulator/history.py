@@ -78,8 +78,6 @@ class HistoryDense(History):
 
 class HistoryNoDelays(History):
 
-    n_cvars = Attr(dependant=True)
-    n_rois = Attr(dependant=True)
     buffer = Attr(dependant=True)
 
 
