@@ -50,6 +50,7 @@ class Turbulence(Observable):
         self.c_exp = c_exp
 
     def _compute_from_fmri(self, bold_signal):
+        # bold_signal (ndarray): Bold signal with shape (n_rois, n_time_samples)
         cc = self.compute_turbulence(bold_signal)
         return cc
 
@@ -64,8 +65,9 @@ class Turbulence(Observable):
             Xanalytic = Xanalytic - np.mean(Xanalytic)
             Phases[seed, :] = np.angle(Xanalytic)
 
+        c_exp = self.c_exp
         for i in range(n_rois):
-            sumphases = np.nansum(np.tile(self.c_exp[i, :], (t_max,1)).T * np.exp(1j * Phases), axis=0) / np.nansum(self.c_exp[i, :])
+            sumphases = np.nansum(np.tile(c_exp[i, :], (t_max,1)).T * np.exp(1j * Phases), axis=0) / np.nansum(self.c_exp[i, :])
             enstrophy[i] = np.abs(sumphases)
 
         Rspatime = np.nanstd(enstrophy)
