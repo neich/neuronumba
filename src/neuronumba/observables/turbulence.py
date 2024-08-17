@@ -8,9 +8,6 @@ from neuronumba.observables.base_observable import Observable
 from neuronumba.tools import matlab_tricks
 
 
-lambda_val = 0.18
-
-
 class Turbulence(Observable):
     """
     Turbulence framework, from:
@@ -30,6 +27,7 @@ class Turbulence(Observable):
 
     """
 
+    lambda_val = Attr(default=0.18, required=False)
     cog_dist = Attr(required=True)
     c_exp = Attr(dependant=True)
 
@@ -45,7 +43,7 @@ class Turbulence(Observable):
             for j in range(N):
                 rr[i, j] = np.linalg.norm(self.cog_dist[i, :] - self.cog_dist[j, :])
         # Build the exponential-distance matrix
-        c_exp = np.exp(-lambda_val * rr)
+        c_exp = np.exp(-self.lambda_val * rr)
         np.fill_diagonal(c_exp, 1)
         self.c_exp = c_exp
 
