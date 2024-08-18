@@ -43,3 +43,24 @@ def autocorr(x, lags):
             var_x2 += x2**2
         autocorrs[lag] = corr/((var_x1*var_x2) ** 0.5)
     return autocorrs
+
+
+# Computes the correlation matrix from a covariance matrix. Replaces
+# MATLAB's corrcov function. From
+# https://gist.github.com/wiso/ce2a9919ded228838703c1c7c7dad13b
+def correlation_from_covariance(covariance):
+    """
+    Parameters
+    ----------
+    covariance : matrix with covariance values, format (n_roi, n_roi)
+
+    Returns
+    -------
+    correlation : matrix with correlation values, format (n_roi, n_roi)
+
+    """
+    v = np.sqrt(np.diag(covariance))
+    outer_v = np.outer(v, v)
+    correlation = covariance / outer_v
+    correlation[covariance == 0] = 0
+    return correlation
