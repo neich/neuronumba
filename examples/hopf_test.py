@@ -96,7 +96,7 @@ def load_subjects_data(fMRI_path, num_sample_subjects):
     fMRIs = read_matlab_h5py(fMRI_path)
     # ---------------- fix subset of subjects to sample
     if not os.path.isfile(selected_subjects_file):  # if we did not already select a list...
-        list_ids = random.sample(fMRIs.keys(), num_sample_subjects)
+        list_ids = random.sample(sorted(fMRIs.keys()), num_sample_subjects)
         save_selected_subjcets(selected_subjects_file, list_ids)
     else:  # if we did, load it!
         list_ids = load_subject_list(selected_subjects_file)
@@ -285,7 +285,7 @@ if __name__ == '__main__':
 
     parser.add_argument("--we-range", nargs=3, help="Parameter sweep range for G", type=float, required=False)
 
-    args = parser.parse_args()
+    args = parser.parse_args()  # for example, for a single test, use --we-range 1.0 1.1 1.0
 
     [wStart, wEnd, wStep] = args.we_range
 
