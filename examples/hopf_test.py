@@ -285,7 +285,7 @@ if __name__ == '__main__':
 
     parser.add_argument("--we-range", nargs=3, help="Parameter sweep range for G", type=float, required=False)
 
-    args = parser.parse_args()
+    args = parser.parse_args()  # for example, for a single test, use --we-range 1.0 1.1 1.0
 
     [wStart, wEnd, wStep] = args.we_range
 
