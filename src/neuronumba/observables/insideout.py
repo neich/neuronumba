@@ -69,7 +69,7 @@ class InsideOut(Observable):
         cc = inside_out(fmri.T, self.nlag)
         return cc
 
-    def calculate_tauwinner(self, dataset, fow_rev):
+    def calculate_tau_winner(self, dataset, fow_rev):
         """
         This method, technically, is not part of the observable, but to keep things coherent, and
         as it is part of the Framework, we keep it here.
