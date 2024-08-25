@@ -58,26 +58,27 @@ class Turbulence(Observable):
         enstrophy = np.zeros((n_rois, t_max))
         Phases = np.zeros((n_rois, t_max))
 
+        # Hilbert transform to calculate the instantaneous phases per node
         for seed in range(n_rois):
             Xanalytic = signal.hilbert(bold_signal[seed,:])
             Xanalytic = Xanalytic - np.mean(Xanalytic)
             Phases[seed, :] = np.angle(Xanalytic)
 
-        c_exp = self.c_exp
+        # Calculate Kuramoto LOCAL order parameter for all nodes
         for i in range(n_rois):
-            sumphases = np.nansum(np.tile(c_exp[i, :], (t_max,1)).T * np.exp(1j * Phases), axis=0) / np.nansum(self.c_exp[i, :])
-            enstrophy[i] = np.abs(sumphases)
+            sumphases = np.nansum(np.tile(self.c_exp[i, :], (t_max,1)).T * np.exp(1j * Phases), axis=0) / np.nansum(self.c_exp[i, :])
+            enstrophy[i] = np.abs(sumphases)  # Kuramoto local order parameter
 
-        Rspatime = np.nanstd(enstrophy)
-        Rspa = np.nanstd(enstrophy, axis=1).T
-        Rtime = np.nanstd(enstrophy, axis=0)
-        acfspa = matlab_tricks.autocorr(Rspa, 100)
-        acftime = matlab_tricks.autocorr(Rtime, 100)
+        R_spa_time = np.nanstd(enstrophy)  # Amplitude turbulence (std of Kuramoto local order parameter across nodes and timepoints)
+        R_spa = np.nanstd(enstrophy, axis=1).T  # Amplitude turbulence (std of Kuramoto local order parameter per timepoint across nodes)
+        R_time = np.nanstd(enstrophy, axis=0)  # Amplitude turbulence (std of Kuramoto local order parameter per node across timepoints)
+        acf_spa = matlab_tricks.autocorr(R_spa, 100)
+        acf_time = matlab_tricks.autocorr(R_time, 100)
 
         return {
-            'Rspatime': Rspatime,
-            'Rspa': Rspa.T,
-            'Rtime': Rtime,
-            'acfspa': acfspa,
-            'acftime': acftime,
+            'Rspatime': R_spa_time,  # Amplitude turbulence
+            'Rspa': R_spa.T,         # Amplitude turbulence across nodes per timepoint
+            'Rtime': R_time,         # Amplitude turbulence across timepoints per node
+            'acfspa': acf_spa,       # Autocorrelation of R across space
+            'acftime': acf_time,     # Autocorrelation of R across time
         }
