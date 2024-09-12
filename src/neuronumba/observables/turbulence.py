@@ -24,7 +24,6 @@ class Turbulence(Observable):
     Code by Gustavo Deco, 2020.
     Translated by Marc Gregoris, May 21, 2024
     Refactored by Gustavo Patow, June 9, 2024
-
     """
 
     lambda_val = Attr(default=0.18, required=False)
@@ -72,8 +71,8 @@ class Turbulence(Observable):
         R_spa_time = np.nanstd(enstrophy)  # Amplitude turbulence (std of Kuramoto local order parameter across nodes and timepoints)
         R_spa = np.nanstd(enstrophy, axis=1).T  # Amplitude turbulence (std of Kuramoto local order parameter per timepoint across nodes)
         R_time = np.nanstd(enstrophy, axis=0)  # Amplitude turbulence (std of Kuramoto local order parameter per node across timepoints)
-        acf_spa = matlab_tricks.autocorr(R_spa, 100)
-        acf_time = matlab_tricks.autocorr(R_time, 100)
+        acf_spa = matlab_tricks.autocorr(R_spa, 100)  # Autocorrelation of R in space
+        acf_time = matlab_tricks.autocorr(R_time, 100)  # Autocorrelation of R in time
 
         return {
             'Rspatime': R_spa_time,  # Amplitude turbulence
