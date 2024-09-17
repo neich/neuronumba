@@ -1,5 +1,5 @@
 import numpy as np
-
+from scipy.special import erfcinv
 
 # Matlab's corr2 function. Code taken from
 # https://stackoverflow.com/questions/29481518/python-equivalent-of-matlab-corr2
@@ -64,3 +64,19 @@ def correlation_from_covariance(covariance):
     correlation = covariance / outer_v
     correlation[covariance == 0] = 0
     return correlation
+
+
+# Rejects outliers based on the median absolute deviations (MAD). Replaces
+# MATLAB's rmoutliers function:
+# https://uk.mathworks.com/help/matlab/ref/rmoutliers.html
+# Code adapted from:
+# https://stackoverflow.com/questions/11686720/is-there-a-numpy-builtin-to-reject-outliers-from-a-list
+# and with modifications explained here:
+# https://uk.mathworks.com/help/matlab/ref/filloutliers.html#bvml247
+def reject_outliers(data, m = 3.):
+    c = -1/(np.sqrt(2)*erfcinv(3/2))
+    array_data = np.array(data)
+    d = np.abs(array_data - np.median(data))
+    mdev = c*np.median(d)
+    s = d / (mdev if mdev else 1.)
+    return array_data[s < m]
