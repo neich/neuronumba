@@ -29,6 +29,7 @@ class Turbulence(Observable):
     lambda_val = Attr(default=0.18, required=False)
     cog_dist = Attr(required=True)
     c_exp = Attr(dependant=True)
+    rr = Attr(dependant=True)
 
     def _init_dependant(self):
         super()._init_dependant()
@@ -44,6 +45,7 @@ class Turbulence(Observable):
         # Build the exponential-distance matrix
         c_exp = np.exp(-self.lambda_val * rr)
         np.fill_diagonal(c_exp, 1)
+        self.rr = rr
         self.c_exp = c_exp
 
     def _compute_from_fmri(self, bold_signal):
@@ -68,6 +70,10 @@ class Turbulence(Observable):
             sumphases = np.nansum(np.tile(self.c_exp[i, :], (t_max,1)).T * np.exp(1j * Phases), axis=0) / np.nansum(self.c_exp[i, :])
             enstrophy[i] = np.abs(sumphases)  # Kuramoto local order parameter
 
+        # Calculate Kuramoto global order parameter and metastability for all nodes
+        gKoP = np.nanmean(np.abs(np.sum(np.exp(1j * Phases), axis=0)) / n_rois)  # Global Kuramoto parameter (synchronization) for all nodes
+        Meta = np.nanstd(np.abs(np.sum(np.exp(1j * Phases), axis=0)) / n_rois)  # Global metastability for all nodes
+
         R_spa_time = np.nanstd(enstrophy)  # Amplitude turbulence (std of Kuramoto local order parameter across nodes and timepoints)
         R_spa = np.nanstd(enstrophy, axis=1).T  # Amplitude turbulence (std of Kuramoto local order parameter per timepoint across nodes)
         R_time = np.nanstd(enstrophy, axis=0)  # Amplitude turbulence (std of Kuramoto local order parameter per node across timepoints)
@@ -80,4 +86,7 @@ class Turbulence(Observable):
             'Rtime': R_time,         # Amplitude turbulence across timepoints per node
             'acfspa': acf_spa,       # Autocorrelation of R across space
             'acftime': acf_time,     # Autocorrelation of R across time
+            'enstrophy': enstrophy,  # Kuramoto local order parameter
+            'gKoP': gKoP,            # Global Kuramoto parameter (synchronization)
+            'Meta': Meta             # Global metastability
         }
