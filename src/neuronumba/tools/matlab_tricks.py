@@ -1,5 +1,7 @@
 import numpy as np
-from scipy.special import erfcinv
+import pandas as pd
+from scipy.special import erfcinv, betainc
+from scipy.stats import pearsonr
 
 # Matlab's corr2 function. Code taken from
 # https://stackoverflow.com/questions/29481518/python-equivalent-of-matlab-corr2
@@ -16,13 +18,34 @@ def corr2(a,b):
     return r
 
 
-# Matlab's corr function. Based on the code from
+# Matlab's c = corr(A,B) function. Based on the code from
 # https://stackoverflow.com/questions/71563937/pandas-autocorr-returning-different-calcs-then-my-own-autocorrelation-function
 def corr(A, B):
     A = (A - A.mean(axis=0)) / A.std(axis=0)
     B = (B - B.mean(axis=0)) / B.std(axis=0)
     correlation = (np.dot(B.T, A) / B.shape[0]).T
     return correlation
+
+
+# Matlab's c,p = corr(A,B) function. Based on the code from
+# https://stackoverflow.com/questions/79040124/p-values-for-all-pairs-between-two-matrices-to-achieve-matlabs-corr-function
+def corr2(A,B):
+    df1 = pd.DataFrame(A)
+    df2 = pd.DataFrame(B)
+
+    coeffmat = np.zeros((df1.shape[1], df2.shape[1]))
+    pvalmat = np.zeros((df1.shape[1], df2.shape[1]))
+
+    for i in range(df1.shape[1]):
+        for j in range(df2.shape[1]):
+            corrtest = pearsonr(df1[df1.columns[i]], df2[df2.columns[j]])
+
+            coeffmat[i, j] = corrtest[0]
+            pvalmat[i, j] = corrtest[1]
+
+    dfcoeff = pd.DataFrame(coeffmat, columns=df2.columns, index=df1.columns)
+    dfpvals = pd.DataFrame(pvalmat, columns=df2.columns, index=df1.columns)
+    return dfcoeff, dfpvals
 
 
 # Matlab's autocorr function. From
