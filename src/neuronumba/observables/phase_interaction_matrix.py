@@ -31,7 +31,7 @@ def phase_interaction_matrix(ts, discard_offset=10):
 def _phase_interaction_matrix(ts, phases, discard_offset=10):
     n_rois, t_max = ts.shape
     npattmax = t_max - (2 * discard_offset - 1)  # calculates the size of phfcd matrix
-    # _Data_Raw structures we are going to need...
+    # Data structures we are going to need...
     d_fc = np.zeros((n_rois, n_rois))
     # PhIntMatr = np.zeros((npattmax, int(N * (N - 1) / 2)))  # The int() is not needed, but... (see above)
     pim_matrix = np.zeros((npattmax, n_rois, n_rois))
