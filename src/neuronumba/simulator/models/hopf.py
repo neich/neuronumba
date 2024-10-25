@@ -41,6 +41,7 @@ from neuronumba.numba_tools import addr
 from neuronumba.numba_tools.addr import address_as_void_pointer
 from neuronumba.numba_tools.types import NDA_f8_1d, NDA_f8_2d
 from neuronumba.simulator.models import Model
+from neuronumba.simulator.models.model import ModelAttrType
 from neuronumba.tools.matlab_tricks import correlation_from_covariance
 
 
@@ -56,10 +57,10 @@ class Hopf(Model):
     # supercritical Hopf bifurcation Constants
     # --------------------------------------------------------------------------
     # Values taken from [Deco_2017]
-    a = Attr(default=-0.5, attr_type=AttrType.Model)
-    omega = Attr(default=0.3, attr_type=AttrType.Model)
-    I_external = Attr(default=0.0, attr_type=AttrType.Model)
-    conservative = Attr(default=True, attr_type=AttrType.Model)
+    a = Attr(default=-0.5, attr_type=ModelAttrType.Model)
+    omega = Attr(default=0.3, attr_type=ModelAttrType.Model)
+    I_external = Attr(default=0.0, attr_type=ModelAttrType.Model)
+    conservative = Attr(default=True, attr_type=ModelAttrType.Model)
     weights = Attr(required=True)
     g = Attr(required=True)
 

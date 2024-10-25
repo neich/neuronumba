@@ -13,6 +13,7 @@ class ParameterEnum(object):
         setattr(self, name, self._index)
         self._index += 1
 
+ModelAttrType = AttrType + ['Model']
 
 class Model(HasAttr):
 
@@ -34,7 +35,7 @@ class Model(HasAttr):
 
     @classmethod
     def _build_parameter_enum(cls):
-        attrs = [name for name, value in cls._get_attributes().items() if value.attr_type == AttrType.Model]
+        attrs = [name for name, value in cls._get_attributes().items() if value.attr_type == ModelModelAttrType.Model]
         p = IntEnum('P', {k: i for i, k in enumerate(attrs)})
         return p
 
@@ -80,7 +81,7 @@ class Model(HasAttr):
 
 
 class LinearCouplingModel(Model):
-    g = Attr(default=1.0, attr_type=AttrType.Model)
+    g = Attr(default=1.0, attr_type=ModelAttrType.Model)
 
     weights_t = Attr(dependant=True)
 
