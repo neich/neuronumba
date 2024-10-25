@@ -136,13 +136,13 @@ class Information_cascade(Observable):
         return cc
 
     def compute_information_cascade(self, bold_signal):
-        turbus = {}
+        turbuRes = {}
         for lambda_v in self.lambda_values:
             # Define and call the turbulence object
             Turbu = Information_transfer(cog_dist=self.cog_dist, lambda_val=lambda_v, ignore_nans=True)
             Turbu.configure()
-            turbus[lambda_v] = Turbu.from_fmri(bold_signal)
-        entropys = {lambda_v: turbus[lambda_v]['enstrophy'] for lambda_v in self.lambda_values}
+            turbuRes[lambda_v] = Turbu.from_fmri(bold_signal)
+        entropys = {lambda_v: turbuRes[lambda_v]['enstrophy'] for lambda_v in self.lambda_values}
         # Calculate info cascade flow and info cascade
         len_lambdas = len(self.lambda_values)
         TransferLambda = np.zeros(len_lambdas)
@@ -153,8 +153,9 @@ class Information_cascade(Observable):
                                          np.squeeze(entropys[lambda_v][:, :-1]).T)
             TransferLambda[lambda_pos+1] = np.nanmean(np.abs(cc[pp < 0.05]))  # info flow
         InformationCascade = np.nanmean(TransferLambda[1:len_lambdas],axis=0)  # info cascade
-        return {
-            'Turbu': turbus,  # to avoid repeating computations
+        turbus = {f'{attrib}-{lambda_v}': turbuRes[lambda_v][attrib]
+                  for attrib in turbuRes[lambda_v] for lambda_v in self.lambda_values}  # This is done to ease serialization...
+        return turbus | { # to avoid repeating computations
             'TransferLambda': TransferLambda,  # Information Cascade Flow
             'InformationCascade': InformationCascade  # Information Cascade
         }
