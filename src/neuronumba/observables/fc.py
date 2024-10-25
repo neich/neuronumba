@@ -15,4 +15,4 @@ class FC(Observable):
 
     def _compute_from_fmri(self, fmri):
         cc = np.corrcoef(fmri.T, rowvar=False)  # Pearson correlation coefficients
-        return cc
+        return {'FC': cc}
