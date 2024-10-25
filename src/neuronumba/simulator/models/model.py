@@ -59,6 +59,12 @@ class Model(HasAttr):
         """
         raise NotImplementedError
 
+    def compute_linear_matrix(self, sc, sigma):
+        """
+        :return:
+        """
+        raise NotImplementedError
+
     def as_array(self, param):
         if isinstance(param, np.ndarray):
             return param

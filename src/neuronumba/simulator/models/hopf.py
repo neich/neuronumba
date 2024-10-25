@@ -34,12 +34,14 @@ from enum import IntEnum
 
 import numpy as np
 import numba as nb
+from scipy import linalg
 
 from neuronumba.basic.attr import Attr, AttrType
 from neuronumba.numba_tools import addr
 from neuronumba.numba_tools.addr import address_as_void_pointer
 from neuronumba.numba_tools.types import NDA_f8_1d, NDA_f8_2d
 from neuronumba.simulator.models import Model
+from neuronumba.tools.matlab_tricks import correlation_from_covariance
 
 
 class Hopf(Model):
@@ -148,3 +150,43 @@ class Hopf(Model):
             return np.stack((dx, dy)), np.empty((1,1))
 
         return Hopf_dfun
+
+    def compute_linear_matrix(self, sc, sigma):
+        """
+        This function computes the linearised Hopf model.
+        solves the equation for the covariances C
+                  A Cv + Cv At + Qn = 0
+
+        Parameters
+        ----------
+        sc : (generative) SC, format (n_roi, n_roi)
+        sigma : ..., format one value, type float
+
+        Returns
+        -------
+        FC : functional connectivity matrix, format (n_roi, n_roi)
+        CV : time-lagged covariance, format (n_roi, n_roi)
+        Cvth : TYPE
+            DESCRIPTION.
+        A : TYPE
+            DESCRIPTION.
+        """
+        # =============== Specific Hopf computations
+        N = len(sc)  # number of nodes
+        wo = np.atleast_2d(self.omega).T.conj() * (2 * np.pi)  # intrinsic node frequency
+
+        # --------------- Jacobian
+        s = np.sum(sc, axis=1)  # vector containing the strength of each node
+        B = np.diag(s)  # create a zero matrix with "s" in the diagonal
+
+        Axx = self.a * np.eye(
+            N) - B + sc  # Axx = Ayy = diag(a-s) + sc, diagonal entries of the Jacobian matrix
+        Ayy = Axx
+        Axy = -np.diag(wo[:, 0])  # Axy = -Ayx = diag(w)
+        Ayx = np.diag(wo[:, 0])
+        A = np.block([[Axx, Axy], [Ayx, Ayy]])  # create Jacobian matrix
+
+        # =============== Build Qn
+        Qn = (sigma ** 2) * np.eye(2 * N)  # covariance matrix of the noise
+
+        return A, Qn
