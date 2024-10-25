@@ -1,11 +1,13 @@
 import inspect
 from enum import Enum
 
+class AttrEnum(set):
+    def __getattr__(self, name):
+        if name in self:
+            return name
+        raise AttributeError
 
-class AttrType(Enum):
-    Unknown = 1,
-    Model = 2
-
+AttrType = AttrEnum(['Unknown'])
 
 class Attr(object):
 
