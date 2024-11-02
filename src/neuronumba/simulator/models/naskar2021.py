@@ -31,12 +31,11 @@ from enum import auto, IntEnum
 import numpy as np
 import numba as nb
 
-from neuronumba.basic.attr import Attr, AttrType
+from neuronumba.basic.attr import Attr
 from neuronumba.numba_tools.addr import address_as_void_pointer
 from neuronumba.numba_tools.types import NDA_f8_2d
 from neuronumba.simulator.models import Model
 from neuronumba.simulator.models import LinearCouplingModel
-from neuronumba.simulator.models.model import ModelAttrType
 
 
 class Naskar2021(LinearCouplingModel):
@@ -47,28 +46,28 @@ class Naskar2021(LinearCouplingModel):
     observable_vars = Model._build_var_dict(['Ie', 're'])
     n_observable_vars = len(observable_vars)
 
-    t_glu = Attr(default=7.46, attr_type=ModelAttrType.Model)    # concentration of glutamate
-    t_gaba = Attr(default=1.82, attr_type=ModelAttrType.Model)   # concentration of GABA
-    We = Attr(default=1.0, attr_type=ModelAttrType.Model)        # scaling of external input current to excitatory population
-    Wi = Attr(default=0.7, attr_type=ModelAttrType.Model)        # scaling of external input current to inhibitory population
-    I0 = Attr(default=0.382, attr_type=ModelAttrType.Model)      #.397  # [nA] overall effective external input
-    w = Attr(default=1.4, attr_type=ModelAttrType.Model)         # weight for recurrent self-excitation in each excitatory population
-    J_NMDA = Attr(default=0.15, attr_type=ModelAttrType.Model)   # [nA] NMDA current
-    M_e = Attr(default=1.0, attr_type=ModelAttrType.Model)
-    ae = Attr(default=310.0, attr_type=ModelAttrType.Model)      # [nC^{-1}], g_E in the paper
-    be = Attr(default=125.0, attr_type=ModelAttrType.Model)      # = g_E * I^{(E)_{thr}} in the paper = 310 * .403 [nA] = 124.93
-    de = Attr(default=0.16, attr_type=ModelAttrType.Model)
-    ai = Attr(default=615.0, attr_type=ModelAttrType.Model)      # [nC^{-1}], g_I in the paper
-    bi = Attr(default=177.0, attr_type=ModelAttrType.Model)      # = g_I * I^{(I)_{thr}} in the paper = 615 * .288 [nA] = 177.12
-    di = Attr(default=0.087, attr_type=ModelAttrType.Model)
-    M_i = Attr(default=1.0, attr_type=ModelAttrType.Model)
-    alfa_e = Attr(default=0.072, attr_type=ModelAttrType.Model)  # forward rate constant for NMDA gating
-    alfa_i = Attr(default=0.53, attr_type=ModelAttrType.Model)   # forward rate constant for GABA gating
-    B_e = Attr(default=0.0066, attr_type=ModelAttrType.Model)    # ms^-1  backward rate constant for NMDA gating
-    B_i = Attr(default=0.18, attr_type=ModelAttrType.Model)      # ms^-1  backward rate constant for GABA gating
-    gamma = Attr(default=1.0, attr_type=ModelAttrType.Model)     # Learning rate
-    rho = Attr(default=3.0, attr_type=ModelAttrType.Model)       # target-firing rate of the excitatory population is maintained at the 3 Hz
-    I_external = Attr(default=0.0, attr_type=ModelAttrType.Model)
+    t_glu = Attr(default=7.46, attributes=Model.Type.Model)    # concentration of glutamate
+    t_gaba = Attr(default=1.82, attributes=Model.Type.Model)   # concentration of GABA
+    We = Attr(default=1.0, attributes=Model.Type.Model)        # scaling of external input current to excitatory population
+    Wi = Attr(default=0.7, attributes=Model.Type.Model)        # scaling of external input current to inhibitory population
+    I0 = Attr(default=0.382, attributes=Model.Type.Model)      #.397  # [nA] overall effective external input
+    w = Attr(default=1.4, attributes=Model.Type.Model)         # weight for recurrent self-excitation in each excitatory population
+    J_NMDA = Attr(default=0.15, attributes=Model.Type.Model)   # [nA] NMDA current
+    M_e = Attr(default=1.0, attributes=Model.Type.Model)
+    ae = Attr(default=310.0, attributes=Model.Type.Model)      # [nC^{-1}], g_E in the paper
+    be = Attr(default=125.0, attributes=Model.Type.Model)      # = g_E * I^{(E)_{thr}} in the paper = 310 * .403 [nA] = 124.93
+    de = Attr(default=0.16, attributes=Model.Type.Model)
+    ai = Attr(default=615.0, attributes=Model.Type.Model)      # [nC^{-1}], g_I in the paper
+    bi = Attr(default=177.0, attributes=Model.Type.Model)      # = g_I * I^{(I)_{thr}} in the paper = 615 * .288 [nA] = 177.12
+    di = Attr(default=0.087, attributes=Model.Type.Model)
+    M_i = Attr(default=1.0, attributes=Model.Type.Model)
+    alfa_e = Attr(default=0.072, attributes=Model.Type.Model)  # forward rate constant for NMDA gating
+    alfa_i = Attr(default=0.53, attributes=Model.Type.Model)   # forward rate constant for GABA gating
+    B_e = Attr(default=0.0066, attributes=Model.Type.Model)    # ms^-1  backward rate constant for NMDA gating
+    B_i = Attr(default=0.18, attributes=Model.Type.Model)      # ms^-1  backward rate constant for GABA gating
+    gamma = Attr(default=1.0, attributes=Model.Type.Model)     # Learning rate
+    rho = Attr(default=3.0, attributes=Model.Type.Model)       # target-firing rate of the excitatory population is maintained at the 3 Hz
+    I_external = Attr(default=0.0, attributes=Model.Type.Model)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
