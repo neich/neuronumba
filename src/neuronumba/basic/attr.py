@@ -2,23 +2,62 @@ import inspect
 from enum import Enum
 
 class AttrEnum(set):
+    def __init__(self, value=None):
+        super().__init__()
+        self._pre = []
+        self._value = value
+
+    def __set_name__(self, owner, name):
+        self._name = owner.__name__
+        base_chain = inspect.getmro(owner)
+        if len(base_chain) > 2:
+            self._pre.append(base_chain[1])
+        self._additems(self._value)
+
+    def _getfullname(self, name):
+        return self._name + "." + name
+
     def __getattr__(self, name):
-        if name in self:
-            return name
+        if name.startswith('_'):
+            return self.__dict__[name]
+        full_name = self._getfullname(name)
+        if full_name in self:
+            return full_name
+        else:
+            for pre in self._pre:
+                if getattr(pre, name):
+                    return pre._getfullname(name)
         raise AttributeError
 
-AttrType = AttrEnum(['Unknown'])
+    def _additems(self, value):
+        if isinstance(value, str):
+            self.add(self._getfullname(value))
+        elif isinstance(value, list):
+            self.update([self._getfullname(x) for x in value])
+        else:
+            raise TypeError(f"Cannot update AttrEnum with type {type(value)}")
+
 
 class Attr(object):
 
-    def __init__(self, default=None, required=True, dependant=False, attr_type=AttrType.Unknown):
+    def __init__(self, default=None, required=True, dependant=False, attributes=None):
+        if attributes is None:
+            self.attributes = []
+        else:
+            if isinstance(attributes, list):
+                self.attributes = attributes
+            elif isinstance(attributes, str):
+                self.attributes = [attributes]
+            else:
+                raise TypeError(f"Cannot initialize Attr attributes with type {type(attributes)}")
         self.default = default
         self.required = bool(required)
         self.dependant = dependant
-        self.attr_type = attr_type
 
 
 class HasAttr(object):
+    Type = AttrEnum(['Unknown'])
+
     def __init__(self, **kwargs):
         cls = type(self)
         class_attrs = dict(inspect.getmembers(cls, lambda o: isinstance(o, Attr)))
