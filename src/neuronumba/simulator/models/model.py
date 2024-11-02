@@ -3,7 +3,8 @@ from enum import IntEnum
 import numba as nb
 import numpy as np
 
-from neuronumba.basic.attr import HasAttr, Attr, AttrType
+from neuronumba.basic.attr import HasAttr, Attr, AttrEnum
+
 
 class ParameterEnum(object):
     def __init__(self):
@@ -13,9 +14,9 @@ class ParameterEnum(object):
         setattr(self, name, self._index)
         self._index += 1
 
-ModelAttrType = AttrType + ['Model']
 
 class Model(HasAttr):
+    Type = AttrEnum(['Model'])
 
     weights = Attr(required=True)
     n_rois = Attr(dependant=True)
@@ -35,7 +36,7 @@ class Model(HasAttr):
 
     @classmethod
     def _build_parameter_enum(cls):
-        attrs = [name for name, value in cls._get_attributes().items() if value.attr_type == ModelModelAttrType.Model]
+        attrs = [name for name, value in cls._get_attributes().items() if Model.Type.Model in value.attributes]
         p = IntEnum('P', {k: i for i, k in enumerate(attrs)})
         return p
 
@@ -81,7 +82,7 @@ class Model(HasAttr):
 
 
 class LinearCouplingModel(Model):
-    g = Attr(default=1.0, attr_type=ModelAttrType.Model)
+    g = Attr(default=1.0, attributes=Model.Type.Model)
 
     weights_t = Attr(dependant=True)
 
