@@ -5,7 +5,7 @@
 import argparse
 
 import dataloaders.adni_3
-from neuronumba.fitting.gec.fitting_gec import calc_H_freq, calc_COV_emp, fitGEC
+from neuronumba.fitting.gec.fitting_gec import calc_H_freq, calc_COV_emp, FitGEC
 from neuronumba.simulator.models import Hopf
 from neuronumba.tools.filters import BandPassFilter
 from neuronumba.observables import FC
@@ -42,9 +42,11 @@ if __name__ == '__main__':
 
         # COV_emp is the timelagged covariance of the empirical data
         COV_emp = calc_COV_emp(timeseries)
-        FC_emp  = fc.from_fmri(timeseries)
+        FC_emp  = fc.from_fmri(timeseries)['FC']
 
-        GEC = fitGEC(FC_emp, COV_emp, avg_SC, hopf, TR)
+
+
+        GEC = FitGEC().fitGEC(FC_emp, COV_emp, avg_SC, hopf, TR)
 
         # don't forget to save it :)
         # np.save(....., GEC)
