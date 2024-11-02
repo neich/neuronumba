@@ -11,10 +11,13 @@
 # Goal: Isolate the gEC fitting in one script
 # =======================================================================
 # Import necessary packages
+from email.policy import default
+
 import numpy as np
 from scipy import signal
 from scipy.linalg import expm
 
+from neuronumba.basic.attr import HasAttr, Attr
 from neuronumba.observables.linear.linearfc import LinearFC
 from neuronumba.tools import filterps
 
@@ -108,81 +111,87 @@ def calc_sigratio(covsim):
     return sr
 
 
+class FitGEC(HasAttr):
+    tau = Attr(default=1.0)
+    g = Attr(default=1.0)
+    n_iter = Attr(default=10000)
+    olderror = Attr(default=5000)
+    epsilon = Attr(default=1e-5)
+    its_test = Attr(default=200)
+
 # --------------- fit gEC
-def fitGEC(FC_emp, COV_emp, SC, model, TR):
-    # ------ Some constants...
-    Tau = 1.0
-    G = 1.0
-    n_iter = 10000
-    olderror = 5000
-    epsilon = 1e-5
-    its_test = 200
-    # ------- number or RoIs
-    n_roi = np.shape(SC)[0]
-
-    # To get the simulated FC and EC from the linearized hopf model,
-    # to initialise some matrices. Starts with SC and the hopf frequencies
-    # hopf_int returns: simulated functional connectivity matrix (FC_sim),
-    #                   covariance matrix (COV_sim),
-    #                   total covariance matrix (COVsimtotal),
-    #                   Jacobian matrix (A)
-    A, Qn = model.compute_linear_matrix(SC, 0.01)
-    obs = LinearFC()
-    result =  obs.from_matrix(A, Qn)
-    FC_sim = result['FC']
-    COVsimtotal = result['CVth']
-    COV_sim = result['CV']
-
-    COV_tausim = np.matmul(expm((Tau * TR) * A), COVsimtotal)  # total simulated covariance at time lag Tau
-    COV_tausim = COV_tausim[0:n_roi, 0:n_roi]  # simulated covariance at time lag Tau (nodes of interest)
-
-    # scaling factors based on the simulated and empirical covariance matrices
-    sigrat_sim = calc_sigratio(COV_sim)
-    sigrat_emp = calc_sigratio(COV_emp)
-    newSC = SC
-
-    # In case you want to check the trajectory of the error, intialise some object
-    save_err = np.zeros((n_iter))
-    save_err_cov = np.zeros((n_iter))
-    save_err_FC = np.zeros((n_iter))
-
-    for i in range(n_iter):
-        save_err[i] = np.mean((FC_emp - FC_sim) ** 2) + np.mean(((sigrat_emp * COV_emp - sigrat_sim * COV_tausim) ** 2))
-        save_err_cov[i] = np.mean(((sigrat_emp * COV_emp - sigrat_sim * COV_tausim) ** 2))
-        save_err_FC[i] = np.mean((FC_emp - FC_sim) ** 2)
-
-        # adjust the arguments eps_fc and eps_cov to change the updating of the
-        # weights in the gEC depending on the difference between the empirical and
-        # simulated FC and time-lagged covariance
-        newSC = update_EC(eps_fc=0.000, eps_cov=0.0001, FCemp=FC_emp,
-                          FCsim=FC_sim.mean(axis=0), covemp=sigrat_emp * COV_emp,
-                          covsim=sigrat_sim * COV_sim, SC=newSC)
-
+    def fitGEC(self, FC_emp, COV_emp, SC, model, TR):
+        # ------- number or RoIs
+        n_roi = np.shape(SC)[0]
+    
+        # To get the simulated FC and EC from the linearized hopf model,
+        # to initialise some matrices. Starts with SC and the hopf frequencies
         # hopf_int returns: simulated functional connectivity matrix (FC_sim),
         #                   covariance matrix (COV_sim),
         #                   total covariance matrix (COVsimtotal),
         #                   Jacobian matrix (A)
-        A, Qn = model.compute_linear_matrix(newSC, 0.01)
+        A, Qn = model.compute_linear_matrix(SC, 0.01)
         obs = LinearFC()
-        result = obs.from_matrix(A, Qn)
+        result =  obs.from_matrix(A, Qn)
         FC_sim = result['FC']
         COVsimtotal = result['CVth']
         COV_sim = result['CV']
+    
+        COV_tausim = np.matmul(expm((self.tau * TR) * A), COVsimtotal)  # total simulated covariance at time lag self.tau
+        COV_tausim = COV_tausim[0:n_roi, 0:n_roi]  # simulated covariance at time lag self.tau (nodes of interest)
+    
+        # scaling factors based on the simulated and empirical covariance matrices
+        sigrat_sim = calc_sigratio(COV_sim)
+        sigrat_emp = calc_sigratio(COV_emp)
+        newSC = SC
+    
+        # In case you want to check the trajectory of the error, intialise some object
+        save_err = np.zeros((self.n_iter))
+        save_err_cov = np.zeros((self.n_iter))
+        save_err_FC = np.zeros((self.n_iter))
 
-        sigrat_sim = calc_sigratio(COV_sim)  # scaling factor based on the simulated covariance matrix
-        COV_tausim = np.matmul(expm((Tau * TR) * A), COVsimtotal)  # total simulated covariance at time lag Tau
-        COV_tausim = COV_tausim[0:n_roi, 0:n_roi]  # simulated covariance at time lag Tau (nodes of interest)
+        olderror = self.olderror
 
-        if i % its_test < 0.1:
-            errornow = save_err[i]
-            if (olderror - errornow) / errornow < epsilon:  # if the curent error is smaller than epsilon from last iteration
-                save_SC = newSC
-                break
-            if olderror < errornow:  # if the current error is larger than the one from last iteration
-                break
-            olderror = errornow  # update old error by current error
-        save_SC = newSC
-    return save_SC
+        for i in range(self.n_iter):
+            save_err[i] = np.mean((FC_emp - FC_sim) ** 2) + np.mean(((sigrat_emp * COV_emp - sigrat_sim * COV_tausim) ** 2))
+            save_err_cov[i] = np.mean(((sigrat_emp * COV_emp - sigrat_sim * COV_tausim) ** 2))
+            save_err_FC[i] = np.mean((FC_emp - FC_sim) ** 2)
+    
+            # adjust the arguments eps_fc and eps_cov to change the updating of the
+            # weights in the gEC depending on the difference between the empirical and
+            # simulated FC and time-lagged covariance
+            newSC = update_EC(eps_fc=0.000, eps_cov=0.0001, FCemp=FC_emp,
+                              FCsim=FC_sim.mean(axis=0), covemp=sigrat_emp * COV_emp,
+                              covsim=sigrat_sim * COV_sim, SC=newSC)
+    
+            # hopf_int returns: simulated functional connectivity matrix (FC_sim),
+            #                   covariance matrix (COV_sim),
+            #                   total covariance matrix (COVsimtotal),
+            #                   Jacobian matrix (A)
+            A, Qn = model.compute_linear_matrix(newSC, 0.01)
+            obs = LinearFC()
+            result = obs.from_matrix(A, Qn)
+            FC_sim = result['FC']
+            COVsimtotal = result['CVth']
+            COV_sim = result['CV']
+    
+            sigrat_sim = calc_sigratio(COV_sim)  # scaling factor based on the simulated covariance matrix
+            COV_tausim = np.matmul(expm((self.tau * TR) * A), COVsimtotal)  # total simulated covariance at time lag self.tau
+            COV_tausim = COV_tausim[0:n_roi, 0:n_roi]  # simulated covariance at time lag self.tau (nodes of interest)
+    
+            if i % self.its_test < 0.1:
+                errornow = save_err[i]
+                # if the current error is smaller than epsilon from last iteration
+                if (olderror - errornow) / errornow < self.epsilon:
+                    save_SC = newSC
+                    break
+                # if the current error is larger than the one from last iteration
+                if olderror < errornow:
+                    break
+                # update old error by current error
+                olderror = errornow
+            save_SC = newSC
+        return save_SC
 
 
 # ================================================================================================================
