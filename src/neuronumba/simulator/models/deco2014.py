@@ -9,7 +9,7 @@
 import numpy as np
 import numba as nb
 
-from neuronumba.basic.attr import Attr, AttrType
+from neuronumba.basic.attr import Attr
 from neuronumba.numba_tools.addr import address_as_void_pointer
 from neuronumba.numba_tools.types import NDA_f8_2d
 from neuronumba.simulator.models import Model
@@ -27,23 +27,23 @@ class Deco2014(LinearCouplingModel):
     observable_vars = Model._build_var_dict(['Ie', 're'])
     n_observable_vars = len(observable_vars)
 
-    taon = Attr(default=100.0, attr_type=AttrType.Model)
-    taog = Attr(default=10.0, attr_type=AttrType.Model)
-    gamma_e = Attr(default=0.641, attr_type=AttrType.Model)
-    gamma_i = Attr(default=1.0, attr_type=AttrType.Model)
-    I0 = Attr(default=0.382, attr_type=AttrType.Model)     # [nA] overall effective external input
-    w = Attr(default=1.4, attr_type=AttrType.Model)
-    J_NMDA = Attr(default=0.15, attr_type=AttrType.Model)  # [nA] NMDA current
-    Jext_e = Attr(default=1.0, attr_type=AttrType.Model)
-    Jext_i = Attr(default=0.7, attr_type=AttrType.Model)
-    ae = Attr(default=310.0, attr_type=AttrType.Model)
-    be = Attr(default=125.0, attr_type=AttrType.Model)
-    de = Attr(default=0.16, attr_type=AttrType.Model)
-    ai = Attr(default=615.0, attr_type=AttrType.Model)
-    bi = Attr(default=177.0, attr_type=AttrType.Model)
-    di = Attr(default=0.087, attr_type=AttrType.Model)
-    J = Attr(default=1.0, attr_type=AttrType.Model)
-    I_external = Attr(default=0.0, attr_type=AttrType.Model)
+    taon = Attr(default=100.0, attributes=Model.Type.Model)
+    taog = Attr(default=10.0, attributes=Model.Type.Model)
+    gamma_e = Attr(default=0.641, attributes=Model.Type.Model)
+    gamma_i = Attr(default=1.0, attributes=Model.Type.Model)
+    I0 = Attr(default=0.382, attributes=Model.Type.Model)     # [nA] overall effective external input
+    w = Attr(default=1.4, attributes=Model.Type.Model)
+    J_NMDA = Attr(default=0.15, attributes=Model.Type.Model)  # [nA] NMDA current
+    Jext_e = Attr(default=1.0, attributes=Model.Type.Model)
+    Jext_i = Attr(default=0.7, attributes=Model.Type.Model)
+    ae = Attr(default=310.0, attributes=Model.Type.Model)
+    be = Attr(default=125.0, attributes=Model.Type.Model)
+    de = Attr(default=0.16, attributes=Model.Type.Model)
+    ai = Attr(default=615.0, attributes=Model.Type.Model)
+    bi = Attr(default=177.0, attributes=Model.Type.Model)
+    di = Attr(default=0.087, attributes=Model.Type.Model)
+    J = Attr(default=1.0, attributes=Model.Type.Model)
+    I_external = Attr(default=0.0, attributes=Model.Type.Model)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
