@@ -80,25 +80,32 @@ def filt_pow_spetra(signal, TR, bpf):
 
 
 def filt_pow_spetra_multiple_subjects(signal, tr, bpf):
-    if signal.ndim == 2:
-        nSubjects = 1
-        nNodes, Tmax = signal.shape  # Here we are assuming we receive only ONE subject...
+    if type(signal) is dict:
+        n_subjects = len(signal.keys())
+        n_nodes, tmax = next(iter(signal.values())).shape
+        PowSpect_filt_narrow = np.zeros((n_subjects, n_nodes, int(np.floor(tmax / 2))))
+        for i, s in enumerate(signal.keys()):
+            PowSpect_filt_narrow[i] = filt_pow_spetra(signal[s][:, :tmax], tr, bpf).T
+        Power_Areas_filt_narrow_unsmoothed = np.mean(PowSpect_filt_narrow, axis=0).T
+    elif signal.ndim == 2:
+        n_subjects = 1
+        n_nodes, tmax = signal.shape  # Here we are assuming we receive only ONE subject...
         Power_Areas_filt_narrow_unsmoothed = filt_pow_spetra(signal, tr)
     else:
         # In case we receive more than one subject, we do a mean...
-        nSubjects, nNodes, Tmax = signal.shape
-        PowSpect_filt_narrow = np.zeros((nSubjects, nNodes, int(np.floor(Tmax / 2))))
-        for s in range(nSubjects):
-            print(f'filtPowSpetraMultipleSubjects: subject {s} (of {nSubjects})')
+        n_subjects, n_nodes, tmax = signal.shape
+        PowSpect_filt_narrow = np.zeros((n_subjects, n_nodes, int(np.floor(tmax / 2))))
+        for s in range(n_subjects):
             PowSpect_filt_narrow[s] = filt_pow_spetra(signal[s, :, :], tr, bpf).T
         Power_Areas_filt_narrow_unsmoothed = np.mean(PowSpect_filt_narrow, axis=0).T
         # Power_Areas_filt_wide_unsmoothed = mean(PowSpect_filt_wide,3);
+
     Power_Areas_filt_narrow_smoothed = np.zeros_like(Power_Areas_filt_narrow_unsmoothed)
     # Power_Areas_filt_wide_smoothed = zeros(nFreqs, nNodes);
     # vsig = zeros(1, nNodes);
-    Ts = Tmax * tr
-    freqs = np.arange(0, Tmax / 2 - 1) / Ts
-    for seed in np.arange(nNodes):
+    Ts = tmax * tr
+    freqs = np.arange(0, tmax / 2 - 1) / Ts
+    for seed in np.arange(n_nodes):
         Power_Areas_filt_narrow_smoothed[:, seed] = gaussfilt(freqs, Power_Areas_filt_narrow_unsmoothed[:, seed], 0.01)
         # Power_Areas_filt_wide_smoothed(:,seed)=gaussfilt(freq,Power_Areas_filt_wide_unsmoothed(:,seed)',0.01);
 
