@@ -4,7 +4,7 @@
 # ==========================================================================
 import argparse
 
-from dataloaders.adni_c import AdniC
+from adni.dataloaders.adni_c import AdniC
 from neuronumba.fitting.gec.fitting_gec import calc_H_freq, calc_COV_emp, FitGEC
 from neuronumba.simulator.models import Hopf
 from neuronumba.tools.filters import BandPassFilter
