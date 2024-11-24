@@ -4,7 +4,7 @@
 # ==========================================================================
 import argparse
 
-import dataloaders.adni_3
+from adni.dataloaders.adni_c import AdniC
 from neuronumba.fitting.gec.fitting_gec import calc_H_freq, calc_COV_emp, FitGEC
 from neuronumba.simulator.models import Hopf
 from neuronumba.tools.filters import BandPassFilter
@@ -23,7 +23,7 @@ if __name__ == '__main__':
     args = parser.parse_args()  # for example, for a single test, use --we-range 1.0 1.1 1.0
 
     # -------------------------- Constants
-    DL = dataloaders.adni_3.ADNI_3(args.base_folder)
+    DL = AdniC(args.base_folder)
     TR = DL.TR()
     all_HC_data = DL.get_fullGroup_data('CN')
     all_HC_fMRI = {s: all_HC_data[s]['timeseries'] for s in all_HC_data}

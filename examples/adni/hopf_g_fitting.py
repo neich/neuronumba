@@ -37,61 +37,6 @@ omega = None
 a = -0.02
 
 
-def read_matlab_h5py(filename):
-    with h5py.File(filename, "r") as f:
-        # Print all root level object names (aka keys)
-        # these can be group or dataset names
-        # print("Keys: %s" % f.keys())
-        # get first object name/key; may or may NOT be a group
-        # a_group_key = list(f.keys())[0]
-        # get the object type for a_group_key: usually group or dataset
-        # print(type(f['subjects_idxs']))
-        # If a_group_key is a dataset name,
-        # this gets the dataset values and returns as a list
-        # data = list(f[a_group_key])
-        # preferred methods to get dataset values:
-        # ds_obj = f[a_group_key]  # returns as a h5py dataset object
-        # ds_arr = f[a_group_key][()]  # returns as a numpy array
-
-        all_fMRI = {}
-        subjects = list(f['subject'])
-        for pos, subj in enumerate(subjects):
-            print(f'reading subject {pos}')
-            group = f[subj[0]]
-            dbs80ts = np.array(group['dbs80ts'])
-            all_fMRI[pos] = dbs80ts.T
-
-    return all_fMRI
-
-def load_subject_list(path):
-    subjects = []
-    with open(path, newline='') as csvfile:
-        reader = csv.reader(csvfile, delimiter=' ', quotechar='|')
-        for row in reader:
-            subjects.append(int(row[0]))
-    return subjects
-
-
-def save_selected_subjcets(path, subj):
-    with open(path, 'w', newline='') as csvfile:
-        writer = csv.writer(csvfile, delimiter=' ',
-                            quotechar='|', quoting=csv.QUOTE_MINIMAL)
-        for s in subj:
-            writer.writerow([s])
-
-
-def load_subjects_data(fMRI_path, num_sample_subjects):
-    fMRIs = read_matlab_h5py(fMRI_path)
-    # ---------------- fix subset of subjects to sample
-    list_ids = random.sample(sorted(fMRIs.keys()), num_sample_subjects)
-    # ---------------- OK, let's proceed
-    nNodes, Tmax = fMRIs[next(iter(fMRIs))].shape
-    res = np.zeros((num_sample_subjects, nNodes, Tmax))
-    for pos, s in enumerate(list_ids):
-        res[pos] = fMRIs[s]
-    return res, list_ids
-
-
 def sim_hopf(weights, we, obs_var):
     n_rois = weights.shape[0]
     lengths = np.random.rand(n_rois, n_rois)*10.0 + 1.0
@@ -263,19 +208,17 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--we-range", nargs=3, help="Parameter sweep range for G", type=float, required=True)
-    parser.add_argument("--num-subjects", help="Number of subjects to use from total timeseries", type=int, default=10)
-    parser.add_argument("--sc-matrix", help="SC matrix", type=str, required=True)
-    parser.add_argument("--time-series", help="fMRI time series", type=str, required=True)
+    parser.add_argument("--adni-a-path", help="Path to load ADNI version A data", type=str, required=True)
     parser.add_argument("--out-path", help="Output path", type=str, required=True)
 
     args = parser.parse_args()  # for example, for a single test, use --we-range 1.0 1.1 1.0
 
     [wStart, wEnd, wStep] = args.we_range
 
-    timeseries, listIDs = load_subjects_data(args.time_series, args.num_subjects)
-    all_fMRI = {s: d for s, d in enumerate(timeseries)}
-    mat0 = hdf.loadmat(args.sc_matrix)['SC_dbs80FULL']
-    sc_norm = 0.2 * mat0 / mat0.max()
+    adni_a = AdniA(base_folder=args.adni_a_path)
+    tr = adni_a.TR()
+    sc_norm = adni_a.get_AvgSC_ctrl()
+    all_fMRI = adni_a.load_all_HC_fMRI()
 
     n_subj = len(all_fMRI.items())
     n_rois, t_max = next(iter(all_fMRI.values())).shape

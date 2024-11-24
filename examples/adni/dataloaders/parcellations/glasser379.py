@@ -5,8 +5,7 @@
 import numpy as np
 import pandas as pd
 
-from dataloaders.parcellations.parcellation import Parcellation
-from neuronumba.tools import hdf
+from adni.dataloaders.parcellations.parcellation import Parcellation
 
 
 class Glasser379(Parcellation):

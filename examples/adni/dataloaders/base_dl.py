@@ -6,10 +6,14 @@
 # ================================================================================================================
 import numpy as np
 
+from neuronumba.basic.attr import HasAttr, Attr
 
-class DataLoader:
-    def __init__(self, path):
-        self.base_folder = path
+
+class DataLoader(HasAttr):
+    base_folder = Attr(required=True)
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
     def name(self):
         raise NotImplementedError('This should have been implemented by a subclass')
