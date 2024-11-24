@@ -8,6 +8,7 @@ import h5py
 import numpy as np
 from pathos.multiprocessing import ProcessPool
 
+from adni.dataloaders.adni_a import AdniA
 from neuronumba.tools import filterps, hdf
 from neuronumba.tools.filters import BandPassFilter
 from neuronumba.observables import PhFCD
@@ -34,19 +35,6 @@ t_warmup = None
 # Hopf parameters
 omega = None
 a = -0.02
-
-# Here you shoud use the path to your data
-cwd = os.path.dirname(os.path.abspath(__file__))
-base_path = os.path.join(cwd, 'Data_Raw', 'HCP', 'DataHCP80')
-# Empirical data with the BOLD signal for a set of subjects
-fMRI_rest_path = os.path.join(base_path, 'hcp1003_REST_LR_dbs80.mat')
-# Connectivity matrix
-SC_path = os.path.join(base_path, 'SC_dbs80HARDIFULL.mat')
-
-out_file_path = os.path.join(cwd, 'Data_Produced', 'Tests', 'TestHopf')
-# How many of the original subjects l
-numSampleSubjects = 20
-selected_subjects_file = os.path.join(out_file_path, f'selected_{numSampleSubjects}.txt')
 
 
 def read_matlab_h5py(filename):
@@ -95,11 +83,7 @@ def save_selected_subjcets(path, subj):
 def load_subjects_data(fMRI_path, num_sample_subjects):
     fMRIs = read_matlab_h5py(fMRI_path)
     # ---------------- fix subset of subjects to sample
-    if not os.path.isfile(selected_subjects_file):  # if we did not already select a list...
-        list_ids = random.sample(sorted(fMRIs.keys()), num_sample_subjects)
-        save_selected_subjcets(selected_subjects_file, list_ids)
-    else:  # if we did, load it!
-        list_ids = load_subject_list(selected_subjects_file)
+    list_ids = random.sample(sorted(fMRIs.keys()), num_sample_subjects)
     # ---------------- OK, let's proceed
     nNodes, Tmax = fMRIs[next(iter(fMRIs))].shape
     res = np.zeros((num_sample_subjects, nNodes, Tmax))
@@ -118,18 +102,13 @@ def sim_hopf(weights, we, obs_var):
     # integ = EulerDeterministic(dt=dt)
     integ = EulerStochastic(dt=dt, sigmas=np.r_[1e-2, 1e-2])
 
-    # coupling = CouplingLinearDense(weights=weights, delays=con.delays, c_vars=np.array([0], dtype=np.int32), n_rois=n_rois)
     history = HistoryNoDelays()
-    # mnt = TemporalAverage(period=1.0, dt=dt)
     monitor = RawSubSample(period=sampling_period, state_vars=m.get_state_sub([obs_var]), obs_vars=m.get_observed_sub())
     s = Simulator(connectivity=con, model=m, history=history, integrator=integ, monitors=[monitor])
     start_time = time.perf_counter()
     s.run(0, t_max_neuronal + t_warmup)
     t_sim = time.perf_counter() - start_time
     data = monitor.data(obs_var)
-    # fig, ax = plt.subplots()
-    # ax.plot(np.arange(data.shape[0]), data)
-    # plt.show()
     data_from = int(data.shape[0] * t_warmup / (t_max_neuronal + t_warmup))
     return t_sim, data[data_from:, :]
 
@@ -218,7 +197,7 @@ def compute_we(num_sim_subjects, obs_var, observables, out_file_name_pattern, pr
 
 def preprocessing_pipeline(weights, processed,  #, abeta,
                            observables,  # This is a dictionary of {name: (distance module, apply filters bool)}
-                           wes):
+                           wes, out_file_path):
     print("\n\n###################################################################")
     print("# Compute ParmSeep")
     print("###################################################################\n")
@@ -283,29 +262,37 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--we-range", nargs=3, help="Parameter sweep range for G", type=float, required=False)
+    parser.add_argument("--we-range", nargs=3, help="Parameter sweep range for G", type=float, required=True)
+    parser.add_argument("--num-subjects", help="Number of subjects to use from total timeseries", type=int, default=10)
+    parser.add_argument("--sc-matrix", help="SC matrix", type=str, required=True)
+    parser.add_argument("--time-series", help="fMRI time series", type=str, required=True)
+    parser.add_argument("--out-path", help="Output path", type=str, required=True)
 
     args = parser.parse_args()  # for example, for a single test, use --we-range 1.0 1.1 1.0
 
     [wStart, wEnd, wStep] = args.we_range
 
-    timeseries, listIDs = load_subjects_data(fMRI_rest_path, numSampleSubjects)
-    n_subj, n_rois, t_max = timeseries.shape
+    timeseries, listIDs = load_subjects_data(args.time_series, args.num_subjects)
+    all_fMRI = {s: d for s, d in enumerate(timeseries)}
+    mat0 = hdf.loadmat(args.sc_matrix)['SC_dbs80FULL']
+    sc_norm = 0.2 * mat0 / mat0.max()
+
+    n_subj = len(all_fMRI.items())
+    n_rois, t_max = next(iter(all_fMRI.values())).shape
     t_max_neuronal = (t_max - 1) * tr + 30
     t_warmup = t_max_neuronal/warmup_factor
 
     # -------------------------- Setup Hopf frequencies
     bpf = BandPassFilter(k=2, flp=0.008, fhi=0.08, tr=tr, apply_detrend=True, apply_demean=True)
-    f_diff = filterps.filt_pow_spetra_multiple_subjects(timeseries, tr, bpf)  # baseline_group[0].reshape((1,52,193))
+    f_diff = filterps.filt_pow_spetra_multiple_subjects(all_fMRI, tr, bpf)  # baseline_group[0].reshape((1,52,193))
     omega = 2 * np.pi * f_diff
 
     # -------------------------- Observable definition
     observables = {'phFCD': (PhFCD(), ConcatenatingAccumulator(), KolmogorovSmirnovStatistic())}
 
-    all_fMRI = {s: d for s, d in enumerate(timeseries)}
 
     # -------------------------- Process (or load) empirical data
-    emp_filename = os.path.join(out_file_path, 'fNeuro_emp.mat')
+    emp_filename = os.path.join(args.out_path, 'fNeuro_emp.mat')
     if os.path.exists(emp_filename):
         processed = hdf.loadmat(emp_filename)
     else:
@@ -313,14 +300,12 @@ if __name__ == '__main__':
         hdf.savemat(emp_filename, processed)
 
     # -------------------------- Load SC matrix
-    mat0 = hdf.loadmat(SC_path)['SC_dbs80FULL']
-    sc_norm = 0.2 * mat0 / mat0.max()
 
     # -------------------------- Preprocessing pipeline!!!
     wes = np.arange(wStart, wEnd + wStep, wStep)
     optimal = preprocessing_pipeline(sc_norm, processed, observables, wes)
     # =======  Only for quick load'n plot test...
-    plot.load_and_plot(out_file_path + '/fitting_we{}.mat', observables,
+    plot.load_and_plot(os.path.join(args.out_path, 'fitting_we{}.mat'), observables,
                               WEs=wes, weName='we',
-                              empFilePath=out_file_path+'/fNeuro_emp.mat')
+                              empFilePath=os.path.join(args.out_path, 'fNeuro_emp.mat'))
 
