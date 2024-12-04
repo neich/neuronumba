@@ -8,7 +8,8 @@ import h5py
 import numpy as np
 from pathos.multiprocessing import ProcessPool
 
-from adni.dataloaders.adni_a import AdniA
+from neuronumba.bold import BoldStephan2008
+from neuronumba.simulator.models import Deco2014
 from neuronumba.tools import filterps, hdf
 from neuronumba.tools.filters import BandPassFilter
 from neuronumba.observables import PhFCD
@@ -23,18 +24,6 @@ from neuronumba.simulator.integrators.euler import EulerStochastic
 from neuronumba.simulator.models.hopf import Hopf
 from neuronumba.simulator.monitors import RawSubSample
 from neuronumba.simulator.simulator import Simulator
-
-tr = 2.0
-dtt = 2.0
-t_min = 10.0 * tr
-sampling_period = tr
-warmup_factor = 606.0/2000.0
-t_max_neuronal = None
-t_warmup = None
-
-# Hopf parameters
-omega = None
-a = -0.02
 
 
 def read_matlab_h5py(filename):
@@ -80,10 +69,15 @@ def save_selected_subjcets(path, subj):
             writer.writerow([s])
 
 
-def load_subjects_data(fMRI_path, num_sample_subjects):
+def load_subjects_data(fMRI_path, out_file_path, num_sample_subjects):
     fMRIs = read_matlab_h5py(fMRI_path)
+    selected_subjects_file = os.path.join(out_file_path, 'list_ids.txt')
     # ---------------- fix subset of subjects to sample
-    list_ids = random.sample(sorted(fMRIs.keys()), num_sample_subjects)
+    if not os.path.isfile(selected_subjects_file):  # if we did not already select a list...
+        list_ids = random.sample(sorted(fMRIs.keys()), num_sample_subjects)
+        save_selected_subjcets(selected_subjects_file, list_ids)
+    else:  # if we did, load it!
+        list_ids = load_subject_list(selected_subjects_file)
     # ---------------- OK, let's proceed
     nNodes, Tmax = fMRIs[next(iter(fMRIs))].shape
     res = np.zeros((num_sample_subjects, nNodes, Tmax))
@@ -92,33 +86,41 @@ def load_subjects_data(fMRI_path, num_sample_subjects):
     return res, list_ids
 
 
-def sim_hopf(weights, we, obs_var):
+def simulate(m, weights, we, obs_var, bold=False):
+    m.configure(g=we)
     n_rois = weights.shape[0]
+    sampling_period = 1.0
     lengths = np.random.rand(n_rois, n_rois)*10.0 + 1.0
     speed = 1.0
     con = Connectivity(weights=weights, lengths=lengths, speed=speed)
-    m = Hopf(a=a, omega=omega, g=we)
     dt = 0.1
     # integ = EulerDeterministic(dt=dt)
     integ = EulerStochastic(dt=dt, sigmas=np.r_[1e-2, 1e-2])
 
+    # coupling = CouplingLinearDense(weights=weights, delays=con.delays, c_vars=np.array([0], dtype=np.int32), n_rois=n_rois)
     history = HistoryNoDelays()
+    # mnt = TemporalAverage(period=1.0, dt=dt)
     monitor = RawSubSample(period=sampling_period, state_vars=m.get_state_sub([obs_var]), obs_vars=m.get_observed_sub())
     s = Simulator(connectivity=con, model=m, history=history, integrator=integ, monitors=[monitor])
     start_time = time.perf_counter()
     s.run(0, t_max_neuronal + t_warmup)
     t_sim = time.perf_counter() - start_time
     data = monitor.data(obs_var)
+    # fig, ax = plt.subplots()
+    # ax.plot(np.arange(data.shape[0]), data)
+    # plt.show()
     data_from = int(data.shape[0] * t_warmup / (t_max_neuronal + t_warmup))
-    return t_sim, data[data_from:, :]
+    signal = data[data_from:, :]
+    if bold:
+        b = BoldStephan2008()
+        signal = b.compute_bold(signal, monitor.period)
+    return t_sim, signal
 
 
-def simulate_single_subject(weights, we, obs_var):
-    t, signal = sim_hopf(weights, we, obs_var)
+def simulate_single_subject(m, weights, we, obs_var, bold=False):
+    t, signal = simulate(m, weights, we, obs_var, bold)
     n_min = int(np.round(t_min / dtt))
     step = int(np.round(tr/dtt))
-    # No need for a BOLD simulation, the result of the model directly can be used as BOLD signal
-    # Discard the first n_min samples
     bds = signal[n_min+step-1::step, :]
     return bds
 
@@ -159,12 +161,12 @@ def process_bold_signals(bold_signals, observables):
     return measureValues
 
 
-def eval_one_param(weights, we, obs_var, observables, num_subjects):
+def eval_one_param(m, weights, we, obs_var, observables, num_subjects, bold=False):
     simulated_bolds = {}
     start_time = time.perf_counter()
     for nsub in range(num_subjects):  # trials. Originally it was 20.
         print(f"   Simulating we={we} -> subject {nsub}/{num_subjects}!!!")
-        bds = simulate_single_subject(weights, we, obs_var)
+        bds = simulate_single_subject(m, weights, we, obs_var,bold)
         repetitionsCounter = 0
         while np.isnan(bds).any() or (np.abs(bds) > np.inf).any():  # This is certainly dangerous, we can have an infinite loop... let's hope not! ;-)
             raise RuntimeError
@@ -177,7 +179,7 @@ def eval_one_param(weights, we, obs_var, observables, num_subjects):
     return dist
 
 
-def compute_we(num_sim_subjects, obs_var, observables, out_file_name_pattern, processed, we, weights):
+def compute_we(m, num_sim_subjects, obs_var, observables, out_file_name_pattern, processed, we, weights, bold=False):
     result = {}
     out_file = out_file_name_pattern.format(np.round(we, decimals=3))
     if os.path.exists(out_file):
@@ -185,7 +187,7 @@ def compute_we(num_sim_subjects, obs_var, observables, out_file_name_pattern, pr
         sim_measures = hdf.loadmat(out_file)
     else:
         print(f"Starting computation for we={we}")
-        sim_measures = eval_one_param(weights, we, obs_var, observables, num_sim_subjects)
+        sim_measures = eval_one_param(m, weights, we, obs_var, observables, num_sim_subjects, bold)
         hdf.savemat(out_file, sim_measures)
     for ds in observables:
         result[ds] = observables[ds][2].distance(sim_measures[ds], processed[ds])
@@ -195,9 +197,9 @@ def compute_we(num_sim_subjects, obs_var, observables, out_file_name_pattern, pr
     return result
 
 
-def preprocessing_pipeline(weights, processed,  #, abeta,
+def preprocessing_pipeline(out_file_path, m, weights, processed,  #, abeta,
                            observables,  # This is a dictionary of {name: (distance module, apply filters bool)}
-                           wes, out_file_path):
+                           wes, bold=False):
     print("\n\n###################################################################")
     print("# Compute ParmSeep")
     print("###################################################################\n")
@@ -221,7 +223,9 @@ def preprocessing_pipeline(weights, processed,  #, abeta,
     of = [out_file_name_pattern for _ in rn]
     pr = [processed for _ in rn]
     wt = [weights for _ in rn]
-    results = pool.map(compute_we, ns, ov, ob, of, pr, wes, wt)
+    b = [bold for _ in rn]
+    ms = [m for _ in rn]
+    results = pool.map(compute_we, ms, ns, ov, ob, of, pr, wes, wt, b)
 
     return results
 
@@ -263,33 +267,48 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--we-range", nargs=3, help="Parameter sweep range for G", type=float, required=True)
-    parser.add_argument("--num-subjects", help="Number of subjects to use from total timeseries", type=int, default=10)
-    parser.add_argument("--sc-matrix", help="SC matrix", type=str, required=True)
-    parser.add_argument("--time-series", help="fMRI time series", type=str, required=True)
-    parser.add_argument("--out-path", help="Output path", type=str, required=True)
+    parser.add_argument("--model", help="Model to use (Hopf, Deco2014)", type=str, default='Hopf')
+    parser.add_argument("--out-path", help="Path to folder for output results", type=str, required=True)
+    parser.add_argument("--sc-matrix", help="Path to SC matrix (Matlab file)", type=str, required=True)
+    parser.add_argument("--fmri-path", help="Path to fMRI timeseries data (Matlab file)", type=str, required=True)
 
     args = parser.parse_args()  # for example, for a single test, use --we-range 1.0 1.1 1.0
 
     [wStart, wEnd, wStep] = args.we_range
 
-    timeseries, listIDs = load_subjects_data(args.time_series, args.num_subjects)
-    all_fMRI = {s: d for s, d in enumerate(timeseries)}
-    mat0 = hdf.loadmat(args.sc_matrix)['SC_dbs80FULL']
-    sc_norm = 0.2 * mat0 / mat0.max()
+    numSampleSubjects = 20
+    tr = 2.0
+    dtt = 2.0
+    t_min = 10.0 * tr
+    sampling_period = tr
+    warmup_factor = 606.0/2000.0
 
-    n_subj = len(all_fMRI.items())
-    n_rois, t_max = next(iter(all_fMRI.values())).shape
+    timeseries, listIDs = load_subjects_data(args.fmri_path, args.out_path, numSampleSubjects)
+    n_subj, n_rois, t_max = timeseries.shape
     t_max_neuronal = (t_max - 1) * tr + 30
     t_warmup = t_max_neuronal/warmup_factor
 
-    # -------------------------- Setup Hopf frequencies
-    bpf = BandPassFilter(k=2, flp=0.008, fhi=0.08, tr=tr, apply_detrend=True, apply_demean=True)
-    f_diff = filterps.filt_pow_spetra_multiple_subjects(all_fMRI, tr, bpf)  # baseline_group[0].reshape((1,52,193))
-    omega = 2 * np.pi * f_diff
+    # -------------------------- Load SC matrix
+    mat0 = hdf.loadmat(args.sc_matrix)['SC_dbs80FULL']
+    sc_norm = 0.2 * mat0 / mat0.max()
+
+    bold = False
+    if args.model == 'Hopf':
+        # -------------------------- Setup Hopf frequencies
+        bpf = BandPassFilter(k=2, flp=0.008, fhi=0.08, tr=tr, apply_detrend=True, apply_demean=True)
+        f_diff = filterps.filt_pow_spetra_multiple_subjects(timeseries, tr, bpf)  # baseline_group[0].reshape((1,52,193))
+        omega = 2 * np.pi * f_diff
+        model = Hopf(omega=omega, weights=sc_norm, a=-0.02)
+    elif args.model == 'Deco2014':
+        model = Deco2014()
+        bold = True
+    else:
+        raise RuntimeError(f"Model <{args.model}> not supported!")
 
     # -------------------------- Observable definition
     observables = {'phFCD': (PhFCD(), ConcatenatingAccumulator(), KolmogorovSmirnovStatistic())}
 
+    all_fMRI = {s: d for s, d in enumerate(timeseries)}
 
     # -------------------------- Process (or load) empirical data
     emp_filename = os.path.join(args.out_path, 'fNeuro_emp.mat')
@@ -299,11 +318,10 @@ if __name__ == '__main__':
         processed = process_empirical_subjects(all_fMRI, observables, bpf)
         hdf.savemat(emp_filename, processed)
 
-    # -------------------------- Load SC matrix
 
     # -------------------------- Preprocessing pipeline!!!
     wes = np.arange(wStart, wEnd + wStep, wStep)
-    optimal = preprocessing_pipeline(sc_norm, processed, observables, wes)
+    optimal = preprocessing_pipeline(args.out_path, model, sc_norm, processed, observables, wes, bold)
     # =======  Only for quick load'n plot test...
     plot.load_and_plot(os.path.join(args.out_path, 'fitting_we{}.mat'), observables,
                               WEs=wes, weName='we',
