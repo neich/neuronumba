@@ -11,8 +11,7 @@ class Monitor(HasAttr):
     dt = Attr(required=True)
     n_rois = Attr(required=True)
     
-    state_vars = Attr(required=True)
-    obs_vars = Attr(required=True)
+    monitor_vars = Attr(required=True)
     state_vars_indices = Attr(dependant=True)
     obs_vars_indices = Attr(dependant=True)
 
@@ -21,8 +20,14 @@ class Monitor(HasAttr):
 
     def _init_dependant(self):
         # Extract index list from input dictionary
-        s_vars_i = [i for _, (i, _) in self.state_vars.items()]
-        o_var_i = [i for _, (i, _) in self.obs_vars.items()]
+        s_vars_i = []
+        o_var_i = []
+
+        for v in self.monitor_vars:
+            if self.monitor_vars[v][0]:
+                s_vars_i.append(self.monitor_vars[v][2])
+            else:
+                o_var_i.append(self.monitor_vars[v][2])
 
         self.n_state_vars = len(s_vars_i)
         self.n_obs_vars = len(o_var_i)
@@ -30,12 +35,13 @@ class Monitor(HasAttr):
         self.obs_vars_indices = np.array(o_var_i, dtype=np.int32)
 
     def data(self, var: str):
-        if var in self.state_vars:
-            return self._get_data_state(self.state_vars[var][1])
-        elif var in self.obs_vars:
-            return self._get_data_obs(self.obs_vars[var][1])
-        else:
+        if var not in self.monitor_vars:
             raise Exception(f"Variable <{var}> not defined in monitor!")
+        value = self.monitor_vars[var]
+        if value[0]:
+            return self._get_data_state(value[1])
+        else:
+            return self._get_data_obs(value[1])
 
     # Methods to be implemented in subclasses
 

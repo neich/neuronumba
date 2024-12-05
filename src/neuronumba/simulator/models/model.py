@@ -40,20 +40,35 @@ class Model(HasAttr):
         p = IntEnum('P', {k: i for i, k in enumerate(attrs)})
         return p
 
-
-    def get_state_sub(self, v_list: list[str] = None):
+    def get_var_info(self, v_list: list[str] = None):
         v_list = v_list or []
+        result = {}
+        i_state = 0
+        i_obs = 0
         for v in v_list:
-            if v not in self.state_vars:
-                raise AttributeError(f"Variable <{v}> is not in the state variables list!")
-        return {v: (self.state_vars[v], i) for i, v in enumerate(v_list)}
+            if v in self.state_vars:
+                result[v] = (True, i_state, self.state_vars[v])
+                i_state += 1
+            elif v in self.observable_vars:
+                result[v] = (False, i_obs, self.observable_vars[v])
+                i_obs += 1
+            else:
+                raise AttributeError(f"Variable <{v}> is not in the state or observable variables list!")
+        return result
 
-    def get_observed_sub(self, v_list: list[str] = None):
-        v_list = v_list or []
-        for v in v_list:
-            if v not in self.observable_vars:
-                raise AttributeError(f"Variable <{v}> is not in the observed list!")
-        return {v: (self.observable_vars[v], i) for i, v in enumerate(v_list)}
+    # def get_state_sub(self, v_list: list[str] = None):
+    #     v_list = v_list or []
+    #     for v in v_list:
+    #         if v not in self.state_vars:
+    #             raise AttributeError(f"Variable <{v}> is not in the state variables list!")
+    #     return {v: (self.state_vars[v], i) for i, v in enumerate(v_list)}
+    #
+    # def get_observed_sub(self, v_list: list[str] = None):
+    #     v_list = v_list or []
+    #     for v in v_list:
+    #         if v not in self.observable_vars:
+    #             raise AttributeError(f"Variable <{v}> is not in the observed list!")
+    #     return {v: (self.observable_vars[v], i) for i, v in enumerate(v_list)}
 
     def get_numba_coupling(self):
         """
@@ -87,6 +102,7 @@ class LinearCouplingModel(Model):
     weights_t = Attr(dependant=True)
 
     def _init_dependant(self):
+        super()._init_dependant()
         # Make sure we store a copy and not a view
         self.weights_t = self.weights.T.copy()
 
