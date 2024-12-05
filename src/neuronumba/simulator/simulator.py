@@ -1,8 +1,13 @@
 import numba as nb
+import numpy as np
 
 from neuronumba.basic.attr import Attr, HasAttr
 from neuronumba.numba_tools import address_as_void_pointer, addr
 from neuronumba.numba_tools.types import NDA_f8_2d, NDA_f8_1d
+from neuronumba.simulator.connectivity import Connectivity
+from neuronumba.simulator.history import HistoryNoDelays
+from neuronumba.simulator.integrators import EulerStochastic
+from neuronumba.simulator.monitors import TemporalAverage
 
 
 class Simulator(HasAttr):
@@ -57,3 +62,17 @@ class Simulator(HasAttr):
                 state = new_state
 
         _sim_loop(n_steps, init_state)
+
+def simulate_nodelay(model, integrator, weights, obs_var, t_max_neuronal, t_warmup):
+    n_rois = weights.shape[0]
+    sampling_period = 1.0
+    lengths = np.random.rand(n_rois, n_rois)*10.0 + 1.0
+    speed = 1.0
+    con = Connectivity(weights=weights, lengths=lengths, speed=speed)
+    history = HistoryNoDelays()
+    monitor = TemporalAverage(period=sampling_period, state_vars=model.get_state_sub([obs_var]), obs_vars=model.get_observed_sub())
+    s = Simulator(connectivity=con, model=model, history=history, integrator=integrator, monitors=[monitor])
+    s.run(0, t_max_neuronal + t_warmup)
+    data = monitor.data(obs_var)
+    data_from = int(data.shape[0] * t_warmup / (t_max_neuronal + t_warmup))
+    return data[data_from:, :]
