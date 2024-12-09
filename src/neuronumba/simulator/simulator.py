@@ -70,7 +70,7 @@ def simulate_nodelay(model, integrator, weights, obs_var, t_max_neuronal, t_warm
     speed = 1.0
     con = Connectivity(weights=weights, lengths=lengths, speed=speed)
     history = HistoryNoDelays()
-    monitor = TemporalAverage(period=sampling_period, state_vars=model.get_state_sub([obs_var]), obs_vars=model.get_observed_sub())
+    monitor = TemporalAverage(period=sampling_period, monitor_vars=model.get_var_info([obs_var]))
     s = Simulator(connectivity=con, model=model, history=history, integrator=integrator, monitors=[monitor])
     s.run(0, t_max_neuronal + t_warmup)
     data = monitor.data(obs_var)
