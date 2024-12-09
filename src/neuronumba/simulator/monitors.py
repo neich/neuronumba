@@ -148,7 +148,7 @@ class TemporalAverage(Monitor):
             self.i_buffer_state = np.empty(1, )
             self.buffer_state = np.empty(1, )
         if self.n_obs_vars:
-            self.i_buffer_observed = np.zeros((self.n_interim_samples, self.n_state_vars, self.n_rois))
+            self.i_buffer_observed = np.zeros((self.n_interim_samples, self.n_obs_vars, self.n_rois))
             self.buffer_observed = np.empty((time_samples, self.n_obs_vars, self.n_rois))
         else:
             self.i_buffer_observed = np.empty(1, )
@@ -160,44 +160,52 @@ class TemporalAverage(Monitor):
     def data_observed(self):
         return self.buffer_observed
 
+    def _get_data_state(self, index: int):
+        return self.buffer_state[:, index, :]
+
+    def _get_data_obs(self, index: int):
+        return self.buffer_observed[:, index, :]
+
     def get_numba_sample(self):
         buffer_state = self.buffer_state
         i_buffer_state = self.i_buffer_state
         addr_state = buffer_state.ctypes.data
         addr_i_state = i_buffer_state.ctypes.data
-        state_vars = self.state_vars
+        state_vars = self.state_vars_indices
         n_state = nb.intc(self.n_state_vars)
         buffer_observed = self.buffer_observed
         i_buffer_observed = self.i_buffer_observed
         addr_observed = buffer_observed.ctypes.data
         addr_i_observed = i_buffer_observed.ctypes.data
-        obs_vars = self.obs_vars
+        obs_vars = self.obs_vars_indices
         n_obs = nb.intc(self.n_obs_vars)
         n_interim_samples = nb.intc(self.n_interim_samples)
 
         @nb.njit(nb.void(nb.intc, nb.f8[:, :], nb.f8[:, :]))
-        def m_sample(step: nb.intc, state: NDA_f8_2d, observed: NDA_f8_2d):
+        def m_sample(step, state, observed):
             # Update interim buffer
             if n_state > 0:
                 i_bnb_state = nb.carray(address_as_void_pointer(addr_i_state), i_buffer_state.shape,
                                         dtype=i_buffer_state.dtype)
-                i_bnb_state[(step - 1) % self.n_interim_samples] = state
+                # i_bnb_state = self.i_buffer_state
+                i_bnb_state[(step - 1) % n_interim_samples] = state[state_vars, :]
                 if step % n_interim_samples == 0:
                     bnb_state = nb.carray(address_as_void_pointer(addr_state), buffer_state.shape,
                                           dtype=buffer_state.dtype)
+                    # bnb_state = self.buffer_state
                     i = nb.intc(step / n_interim_samples)
-                    for v in range(n_state):
-                        bnb_state[i, v, :] = np.average(i_bnb_state[:, state_vars[v], :], axis=0)
+                    bnb_state[i, :, :] = np.average(i_bnb_state, axis=0)
 
             if n_obs > 0:
                 i_bnb_observed = nb.carray(address_as_void_pointer(addr_i_observed), i_buffer_observed.shape,
                                         dtype=i_buffer_observed.dtype)
-                i_bnb_observed[(step - 1) % self.n_interim_samples] = observed
+                # i_bnb_observed = self.i_buffer_observed
+                i_bnb_observed[(step - 1) % n_interim_samples] = observed[obs_vars, :]
                 if step % n_interim_samples == 0:
                     bnb_observed = nb.carray(address_as_void_pointer(addr_observed), buffer_observed.shape,
                                           dtype=buffer_observed.dtype)
+                    # bnb_observed = self.buffer_observed
                     i = nb.intc(step / n_interim_samples)
-                    for v in range(n_obs):
-                        bnb_observed[i, v, :] = np.average(i_bnb_observed[:, obs_vars[v], :], axis=0)
+                    bnb_observed[i, :, :] = np.average(i_bnb_observed, axis=0)
 
         return m_sample
