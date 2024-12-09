@@ -88,7 +88,7 @@ class FICDeco2014(FIC):
             # total_error += error_i
 
         if largest_distance < self._min_largest_distance:
-            min_largest_distance = largest_distance
+            self._min_largest_distance = largest_distance
         else:
             self._slow_factor *= 0.5
 
@@ -118,8 +118,8 @@ class FICDeco2014(FIC):
         # -------------------------
         delta = 0.02 * np.ones(N)
         # A couple of initializations, needed only for updateJ_2
-        min_largest_distance = np.inf;
-        slow_factor = 1.0
+        self._min_largest_distance = np.inf
+        self._slow_factor = 1.0
 
         if self.verbose:
             print("  Trials:", end=" ", flush=True)
@@ -165,7 +165,7 @@ class FICDeco2014(FIC):
             print("Final (we={}): {} trials, with {}/{} nodes solved at trial {}".format(g, k, bestJCount, N, bestTrial))
         if self.verbose:
             print('DONE!') if flagJ == N else print('FAILED!!!')
-        return bestJ, bestJCount
+        return bestJ
 
         
     
