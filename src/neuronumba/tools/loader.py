@@ -7,8 +7,12 @@ import neuronumba.tools.hdf as hdf
 def load_2d_matrix(filename, delimiter=None, index=None):
     if not os.path.exists(filename):
         raise FileNotFoundError(filename)
-    filename, file_extension = os.path.splitext(filename)
+    _, file_extension = os.path.splitext(filename)
     if file_extension == '.csv':
+        return np.loadtxt(filename, delimiter=delimiter)
+    elif file_extension == '.tsv':
+        if delimiter is None:
+            delimiter = '\t'
         return np.loadtxt(filename, delimiter=delimiter)
     elif file_extension == '.mat':
         if index is None:
