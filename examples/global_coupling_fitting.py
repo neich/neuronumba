@@ -2,15 +2,12 @@ import argparse
 import copy
 import csv
 import os
-import random
 import time
 
 import h5py
 import numpy as np
-from numba.tests.test_sort import np_sort_usecase
 from pathos.multiprocessing import ProcessPool
 
-from examples.adni.hopf_g_fitting import t_max_neuronal, t_warmup, sampling_period
 from neuronumba.bold import BoldStephan2008
 from neuronumba.simulator.models import Deco2014
 from neuronumba.tools import filterps, hdf
@@ -18,15 +15,11 @@ from neuronumba.tools.filters import BandPassFilter
 from neuronumba.observables import PhFCD, FC
 
 # Local module
-import plot
 from neuronumba.observables.accumulators import ConcatenatingAccumulator
 from neuronumba.observables.measures import KolmogorovSmirnovStatistic
-from neuronumba.simulator.connectivity import Connectivity
-from neuronumba.simulator.history import HistoryNoDelays
 from neuronumba.simulator.integrators.euler import EulerStochastic
 from neuronumba.simulator.models.hopf import Hopf
-from neuronumba.simulator.monitors import RawSubSample
-from neuronumba.simulator.simulator import Simulator, simulate_nodelay
+from neuronumba.simulator.simulator import simulate_nodelay
 from neuronumba.tools.loader import load_2d_matrix
 
 
@@ -266,13 +259,13 @@ def process_empirical_subjects(bold_signals, observables, bpf, verbose=True):
 def run():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--g-range", nargs=3, help="Parameter sweep range for G", type=float, required=True)
+    parser.add_argument("--g-range", nargs=3, help="Parameter sweep range for G (start, end, step)", type=float, required=True)
     parser.add_argument("--model", help="Model to use (Hopf, Deco2014)", type=str, default='Hopf')
     parser.add_argument("--out-path", help="Path to folder for output results", type=str, required=True)
     parser.add_argument("--tr", help="Time resolution of fMRI scanner (seconds)", type=float, required=True)
     parser.add_argument("--sc-scaling", help="Scaling factor for the SC matrix", type=float, default=0.2)
     parser.add_argument("--tmax", help="Override simulation time (seconds)", type=float, required=False)
-    parser.add_argument("--fmri-path", help="Path to fMRI timeseries data (Matlab file)", type=str, required=True)
+    parser.add_argument("--fmri-path", help="Path to fMRI timeseries data", type=str, required=True)
 
     args = parser.parse_args()  # for example, for a single test, use --ge-range 1.0 10.0 1.0
 
