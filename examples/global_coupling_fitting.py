@@ -1,4 +1,5 @@
 import argparse
+import copy
 import csv
 import os
 import random
@@ -14,7 +15,7 @@ from neuronumba.bold import BoldStephan2008
 from neuronumba.simulator.models import Deco2014
 from neuronumba.tools import filterps, hdf
 from neuronumba.tools.filters import BandPassFilter
-from neuronumba.observables import PhFCD
+from neuronumba.observables import PhFCD, FC
 
 # Local module
 import plot
@@ -92,7 +93,7 @@ def load_subjects_data(fmri_path):
 
     return result
 
-def load_sc(fmri_path):
+def load_sc(fmri_path, scale):
     if not os.path.isdir(fmri_path):
         raise FileNotFoundError(f"Path <{fmri_path}> does not exist or is not a folder!")
     n_sub = 0
@@ -112,7 +113,7 @@ def load_sc(fmri_path):
 
     sc = sc / n_sub
     # Warning: we use this normalization for the SC matrix, make sure it makes sense for your own data
-    return 0.2 * sc / sc.max()
+    return scale * sc / sc.max()
 
 
 
@@ -135,12 +136,21 @@ def simulate(exec_env, g):
 def simulate_single_subject(exec_env, g):
     signal = simulate(exec_env, g)
     bold = exec_env['bold']
+    sampling_period = exec_env['sampling_period']
     if bold:
         b = BoldStephan2008()
         bds = b.compute_bold(signal, sampling_period)
     else:
         # Some models like Hopf do not require explicit computation of BOLD signal
-        bds = signal
+        # BUT, we still have to convert the signal into samples of size tr
+        tr = exec_env['tr']
+        n = int(tr * 1000.0 / sampling_period)
+        len = signal.shape[0]
+        tmp1 = np.pad(signal, ((0, n - len % n), (0, 0)),
+                                mode='constant',
+                                constant_values=np.nan)
+        tmp2 = tmp1.reshape(2000, int(tmp1.shape[0]/2000), -1)
+        bds = np.nanmean(tmp2, axis=0)
     return bds
 
 
@@ -190,11 +200,11 @@ def eval_one_param(exec_env, g):
         print(f"   Simulating g={g} -> subject {nsub}/{num_subjects}!!!")
         bds = simulate_single_subject(exec_env, g)
         while np.isnan(bds).any() or (np.abs(bds) > np.inf).any():  # This is certainly dangerous, we can have an infinite loop... let's hope not! ;-)
-            raise RuntimeError
+            raise RuntimeError(f"Numeric error computing subject {nsub}/{num_subjects} for g={g}")
         simulated_bolds[nsub] = bds
 
     observables = exec_env['observables']
-    dist = process_bold_signals(simulated_bolds, observables)
+    dist = process_bold_signals(simulated_bolds, exec_env)
     # now, add {label: currValue} to the dist dictionary, so this info is in the saved file (if using the decorator @loadOrCompute)
     dist['g'] = g
 
@@ -216,7 +226,6 @@ def compute_g(exec_env, g):
     processed = exec_env['processed']
     for ds in observables:
         result[ds] = observables[ds][2].distance(sim_measures[ds], processed[ds])
-
         print(f" {ds} for g={g}: {result[ds]};", end='', flush=True)
 
     return result
@@ -260,7 +269,9 @@ def run():
     parser.add_argument("--g-range", nargs=3, help="Parameter sweep range for G", type=float, required=True)
     parser.add_argument("--model", help="Model to use (Hopf, Deco2014)", type=str, default='Hopf')
     parser.add_argument("--out-path", help="Path to folder for output results", type=str, required=True)
-    parser.add_argument("--sc-matrix", help="Path to SC matrix (Matlab file)", type=str, required=True)
+    parser.add_argument("--tr", help="Time resolution of fMRI scanner (seconds)", type=float, required=True)
+    parser.add_argument("--sc-scaling", help="Scaling factor for the SC matrix", type=float, default=0.2)
+    parser.add_argument("--tmax", help="Override simulation time (seconds)", type=float, required=False)
     parser.add_argument("--fmri-path", help="Path to fMRI timeseries data (Matlab file)", type=str, required=True)
 
     args = parser.parse_args()  # for example, for a single test, use --ge-range 1.0 10.0 1.0
@@ -272,7 +283,7 @@ def run():
 
     # Time resolution parameter of the fMRI data (seconds). Each dataset will have its own tr value
     # depending on the scanner setting used to capture the BOLD signal
-    tr = 2.0
+    tr = args.tr
     # We will discard the first t_min seconds of the simulation
     t_min = 10.0 * tr
 
@@ -285,7 +296,7 @@ def run():
         timeseries[i, :, :] = fmri
 
     # Compute the simulation length according to input data
-    t_max = t_max * tr
+    t_max = t_max * tr if args.tmax is None else args.tmax
     # Compute simulation time in milliseconds
     t_max_neuronal = (t_max + t_min - 1) * 1000.0
     t_warmup = t_min * 1000.0
@@ -297,13 +308,13 @@ def run():
     sampling_period = 1.0
 
     # Load structural connectivity matrix. In our case, we average all the SC matrices of all subjects
-    sc_norm = load_sc(args.fmri_path)
+    sc_norm = load_sc(args.fmri_path, args.sc_scaling)
 
     bold = False
     if args.model == 'Hopf':
         # -------------------------- Setup Hopf frequencies
         bpf = BandPassFilter(k=2, flp=0.008, fhi=0.08, tr=tr, apply_detrend=True, apply_demean=True)
-        f_diff = filterps.filt_pow_spetra_multiple_subjects(timeseries, tr, bpf)  # baseline_group[0].reshape((1,52,193))
+        f_diff = filterps.filt_pow_spetra_multiple_subjects(timeseries, tr, bpf)
         omega = 2 * np.pi * f_diff
         model = Hopf(omega=omega, weights=sc_norm, a=-0.02)
         integrator = EulerStochastic(dt=dt, sigmas=np.r_[1e-2, 1e-2])
@@ -316,9 +327,11 @@ def run():
     else:
         raise RuntimeError(f"Model <{args.model}> not supported!")
 
+    # observable_name = 'FC'
     observable_name = 'phFCD'
 
     # Observable definition
+    # observables = {observable_name: (FC(), ConcatenatingAccumulator(), KolmogorovSmirnovStatistic())}
     observables = {observable_name: (PhFCD(), ConcatenatingAccumulator(), KolmogorovSmirnovStatistic())}
 
     all_fMRI = {s: d for s, d in enumerate(timeseries)}
@@ -334,18 +347,17 @@ def run():
 
     # -------------------------- Preprocessing pipeline!!!
     gs = np.arange(g_Start, g_End + g_Step, g_Step)
-
     out_file_name_pattern = os.path.join(args.out_path, 'fitting_g{}.mat')
 
-    # We use parallel processing to compute all the simulations
-    pool = ProcessPool(nodes=10)
-    exec_env = {
-        'model': model,
-        'integrator': integrator,
+
+    # Single point execution for debugging purposes
+    compute_g({
+        'model': copy.deepcopy(model),
+        'integrator': copy.deepcopy(integrator),
         'weights': sc_norm,
         'processed': processed,
         'tr': tr,
-        'observables': observables,
+        'observables': copy.deepcopy(observables),
         'obs_var': obs_var,
         'bold': bold,
         'out_file_name_pattern': out_file_name_pattern,
@@ -353,10 +365,30 @@ def run():
         't_max_neuronal': t_max_neuronal,
         't_warmup': t_warmup,
         'sampling_period': sampling_period
-    }
+    }, 2.0)
+    exit(0)
 
+    # We use parallel processing to compute all the simulations
+    pool = ProcessPool(nodes=10)
     rn = list(range(len(gs)))
-    ee = [exec_env for _ in rn]
+    # Not entirely sure that the deepcopy() function is needed, but I use it when the object is going to be accessed
+    # in read-write mode.
+    ee = [{
+        'model': copy.deepcopy(model),
+        'integrator': copy.deepcopy(integrator),
+        'weights': sc_norm,
+        'processed': processed,
+        'tr': tr,
+        'observables': copy.deepcopy(observables),
+        'obs_var': obs_var,
+        'bold': bold,
+        'out_file_name_pattern': out_file_name_pattern,
+        'num_subjects': n_subj,
+        't_max_neuronal': t_max_neuronal,
+        't_warmup': t_warmup,
+        'sampling_period': sampling_period
+    } for _ in rn]
+
     results = pool.map(compute_g, ee, gs)
 
 if __name__ == '__main__':
