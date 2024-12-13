@@ -63,9 +63,8 @@ class Simulator(HasAttr):
 
         _sim_loop(n_steps, init_state)
 
-def simulate_nodelay(model, integrator, weights, obs_var, t_max_neuronal, t_warmup):
+def simulate_nodelay(model, integrator, weights, obs_var, sampling_period, t_max_neuronal, t_warmup):
     n_rois = weights.shape[0]
-    sampling_period = 1.0
     lengths = np.random.rand(n_rois, n_rois)*10.0 + 1.0
     speed = 1.0
     con = Connectivity(weights=weights, lengths=lengths, speed=speed)

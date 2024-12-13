@@ -25,6 +25,8 @@ class ConcatenatingAccumulator(ObservableAccumulator):
         return np.array([], dtype=np.float64)
 
     def accumulate(self, FCDs, nsub, signal):
+        if FCDs.shape[0] == 0:
+            return signal
         FCDs = np.concatenate((FCDs, signal))  # Compute the FCD correlations
         return FCDs
 
