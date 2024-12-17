@@ -119,7 +119,7 @@ def simulate(exec_env, g):
     integrator = exec_env['integrator']
     sampling_period = exec_env['sampling_period']
 
-    model.configure(g=g)
+    model.configure(weights=weights, g=g)
     signal = simulate_nodelay(model, integrator, weights, obs_var, sampling_period, t_max_neuronal, t_warmup)
     data_from = int(signal.shape[0] * t_warmup / (t_max_neuronal + t_warmup))
     signal = signal[data_from:, :]
@@ -309,7 +309,7 @@ def run():
         bpf = BandPassFilter(k=2, flp=0.008, fhi=0.08, tr=tr, apply_detrend=True, apply_demean=True)
         f_diff = filterps.filt_pow_spetra_multiple_subjects(timeseries, tr, bpf)
         omega = 2 * np.pi * f_diff
-        model = Hopf(omega=omega, weights=sc_norm, a=-0.02)
+        model = Hopf(omega=omega, a=-0.02)
         integrator = EulerStochastic(dt=dt, sigmas=np.r_[1e-2, 1e-2])
         obs_var = 'x'
     elif args.model == 'Deco2014':
