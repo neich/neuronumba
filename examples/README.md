@@ -10,4 +10,4 @@ First f all, check the command line options:
 
 And an exemple of execution would be:
 
-`PYTHONPATH=../src python3 global_coupling_fitting.py --sc-scaling 1.0 --tmax 180 --tr 2.0 --g-range 2.0 3.0 0.1  --fmri-path ./Data_Raw/ebrains_popovych --out-path ./Data_Produced/ebrains_popovych`
+`PYTHONPATH=../src python3 global_coupling_fitting.py --tr 0.72 --sc-scaling 1.0 --tmax 180 --tr 2.0 --g-range 2.0 3.0 0.1  --fmri-path ./Data_Raw/ebrains_popovych --out-path ./Data_Produced/ebrains_popovych`
