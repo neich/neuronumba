@@ -10,6 +10,7 @@ from pathos.multiprocessing import ProcessPool
 
 from neuronumba.bold import BoldStephan2008
 from neuronumba.simulator.models import Deco2014
+from neuronumba.simulator.models.montbrio import Montbrio
 from neuronumba.tools import filterps, hdf
 from neuronumba.tools.filters import BandPassFilter
 from neuronumba.observables import PhFCD, FC
@@ -317,6 +318,11 @@ def run():
         integrator = EulerStochastic(dt=dt, sigmas=np.r_[1e-2, 1e-2])
         bold = True
         obs_var = 're'
+    elif args.model == 'Montbrio':
+        model = Montbrio()
+        integrator = EulerStochastic(dt=dt, sigmas=np.r_[1e-2, 0.0, 0.0, 0.0, 0.0, 0.0])
+        bold = True
+        obs_var = 'r_e'
     else:
         raise RuntimeError(f"Model <{args.model}> not supported!")
 
