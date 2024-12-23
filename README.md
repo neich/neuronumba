@@ -27,5 +27,5 @@ There are some Jupyter [notebooks](notebooks) to show how the library works.
 
 The package is not in the pip repository, but temporarily you can install it with:
 
-`pip install neuronumba@git+https://github.com/neich/neuronumba`
+`pip install -e "git+https://github.com/neich/neuronumba.git#egg=neuronumba&subdirectory=src"`
 
