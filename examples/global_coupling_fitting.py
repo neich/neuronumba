@@ -10,7 +10,6 @@ from pathos.multiprocessing import ProcessPool
 
 from neuronumba.bold import BoldStephan2008
 from neuronumba.simulator.models import Deco2014
-from neuronumba.simulator.models.montbrio import Montbrio
 from neuronumba.tools import filterps, hdf
 from neuronumba.tools.filters import BandPassFilter
 from neuronumba.observables import PhFCD, FC
@@ -121,7 +120,11 @@ def simulate(exec_env, g):
     sampling_period = exec_env['sampling_period']
 
     model.configure(weights=weights, g=g)
+    start_t = time.time()
     signal = simulate_nodelay(model, integrator, weights, obs_var, sampling_period, t_max_neuronal, t_warmup)
+    diff_t = time.time() - start_t
+    if exec_env['verbose']:
+        print(f"Execution time: {diff_t}")
     data_from = int(signal.shape[0] * t_warmup / (t_max_neuronal + t_warmup))
     signal = signal[data_from:, :]
     return signal
@@ -318,11 +321,6 @@ def run():
         integrator = EulerStochastic(dt=dt, sigmas=np.r_[1e-2, 1e-2])
         bold = True
         obs_var = 're'
-    elif args.model == 'Montbrio':
-        model = Montbrio()
-        integrator = EulerStochastic(dt=dt, sigmas=np.r_[1e-2, 0.0, 0.0, 0.0, 0.0, 0.0])
-        bold = True
-        obs_var = 'r_e'
     else:
         raise RuntimeError(f"Model <{args.model}> not supported!")
 
@@ -350,22 +348,23 @@ def run():
 
 
     # Single point execution for debugging purposes
-    compute_g({
-        'model': copy.deepcopy(model),
-        'integrator': copy.deepcopy(integrator),
-        'weights': sc_norm,
-        'processed': processed,
-        'tr': tr,
-        'observables': copy.deepcopy(observables),
-        'obs_var': obs_var,
-        'bold': bold,
-        'out_file_name_pattern': out_file_name_pattern,
-        'num_subjects': n_subj,
-        't_max_neuronal': t_max_neuronal,
-        't_warmup': t_warmup,
-        'sampling_period': sampling_period
-    }, 2.0)
-    exit(0)
+    # compute_g({
+    #     'verbose':True,
+    #     'model': copy.deepcopy(model),
+    #     'integrator': copy.deepcopy(integrator),
+    #     'weights': sc_norm,
+    #     'processed': processed,
+    #     'tr': tr,
+    #     'observables': copy.deepcopy(observables),
+    #     'obs_var': obs_var,
+    #     'bold': bold,
+    #     'out_file_name_pattern': out_file_name_pattern,
+    #     'num_subjects': n_subj,
+    #     't_max_neuronal': t_max_neuronal,
+    #     't_warmup': t_warmup,
+    #     'sampling_period': sampling_period
+    # }, 2.0)
+    # exit(0)
 
     # We use parallel processing to compute all the simulations
     pool = ProcessPool(nodes=10)
@@ -373,6 +372,8 @@ def run():
     # Not entirely sure that the deepcopy() function is needed, but I use it when the object is going to be accessed
     # in read-write mode.
     ee = [{
+        'verbose': True,
+        'i': i,
         'model': copy.deepcopy(model),
         'integrator': copy.deepcopy(integrator),
         'weights': sc_norm,
@@ -386,7 +387,7 @@ def run():
         't_max_neuronal': t_max_neuronal,
         't_warmup': t_warmup,
         'sampling_period': sampling_period
-    } for _ in rn]
+    } for i, _ in enumerate(rn)]
 
     results = pool.map(compute_g, ee, gs)
 
