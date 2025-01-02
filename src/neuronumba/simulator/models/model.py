@@ -1,3 +1,4 @@
+import os
 from enum import IntEnum
 
 import numba as nb
@@ -26,6 +27,12 @@ class Model(HasAttr):
         super().__init__(**kwargs)
         cls = type(self)
         setattr(cls, 'P', cls._build_parameter_enum())
+
+    def configure(self, **kwargs):
+        if os.name == "nt":
+            cls = type(self)
+            setattr(cls, 'P', cls._build_parameter_enum())
+        super().configure(**kwargs)
 
     def _init_dependant(self):
         self.n_rois = self.weights.shape[0]
