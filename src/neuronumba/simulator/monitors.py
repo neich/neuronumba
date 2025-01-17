@@ -168,15 +168,15 @@ class TemporalAverage(Monitor):
 
     def get_numba_sample(self):
         buffer_state = self.buffer_state
+        bs_addr, bs_shape, bs_dtype = addr.get_addr(buffer_state)
         i_buffer_state = self.i_buffer_state
-        addr_state = buffer_state.ctypes.data
-        addr_i_state = i_buffer_state.ctypes.data
+        ibs_addr, ibs_shape, ibs_dtype = addr.get_addr(i_buffer_state)
         state_vars = self.state_vars_indices
         n_state = nb.intc(self.n_state_vars)
         buffer_observed = self.buffer_observed
+        bo_addr, bo_shape, bo_dtype = addr.get_addr(buffer_observed)
         i_buffer_observed = self.i_buffer_observed
-        addr_observed = buffer_observed.ctypes.data
-        addr_i_observed = i_buffer_observed.ctypes.data
+        ibo_addr, ibo_shape, ibo_dtype = addr.get_addr(i_buffer_observed)
         obs_vars = self.obs_vars_indices
         n_obs = nb.intc(self.n_obs_vars)
         n_interim_samples = nb.intc(self.n_interim_samples)
@@ -185,27 +185,23 @@ class TemporalAverage(Monitor):
         def m_sample(step, state, observed):
             # Update interim buffer
             if n_state > 0:
-                i_bnb_state = nb.carray(address_as_void_pointer(addr_i_state), i_buffer_state.shape,
-                                        dtype=i_buffer_state.dtype)
+                i_bnb_state = nb.carray(address_as_void_pointer(ibs_addr), ibs_shape, dtype=ibs_dtype)
                 # i_bnb_state = self.i_buffer_state
                 i_bnb_state[(step - 1) % n_interim_samples] = state[state_vars, :]
                 if step % n_interim_samples == 0:
-                    bnb_state = nb.carray(address_as_void_pointer(addr_state), buffer_state.shape,
-                                          dtype=buffer_state.dtype)
+                    bnb_state = nb.carray(address_as_void_pointer(bs_addr), bs_shape, dtype=bs_dtype)
                     # bnb_state = self.buffer_state
                     i = nb.intc(step / n_interim_samples)
-                    bnb_state[i, :, :] = np.average(i_bnb_state, axis=0)
+                    bnb_state[i, :, :] = np.sum(i_bnb_state, axis=0) / ibs_shape[0]
 
             if n_obs > 0:
-                i_bnb_observed = nb.carray(address_as_void_pointer(addr_i_observed), i_buffer_observed.shape,
-                                        dtype=i_buffer_observed.dtype)
+                i_bnb_observed = nb.carray(address_as_void_pointer(ibo_addr), ibo_shape, dtype=ibo_dtype)
                 # i_bnb_observed = self.i_buffer_observed
                 i_bnb_observed[(step - 1) % n_interim_samples] = observed[obs_vars, :]
                 if step % n_interim_samples == 0:
-                    bnb_observed = nb.carray(address_as_void_pointer(addr_observed), buffer_observed.shape,
-                                          dtype=buffer_observed.dtype)
+                    bnb_observed = nb.carray(address_as_void_pointer(bo_addr), bo_shape, dtype=bo_dtype)
                     # bnb_observed = self.buffer_observed
                     i = nb.intc(step / n_interim_samples)
-                    bnb_observed[i, :, :] = np.average(i_bnb_observed, axis=0)
+                    bnb_observed[i, :, :] = np.sum(i_bnb_observed, axis=0) / ibo_shape[0]
 
         return m_sample

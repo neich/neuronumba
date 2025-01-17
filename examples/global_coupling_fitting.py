@@ -146,7 +146,7 @@ def simulate_single_subject(exec_env, g):
         tmp1 = np.pad(signal, ((0, n - len % n), (0, 0)),
                                 mode='constant',
                                 constant_values=np.nan)
-        tmp2 = tmp1.reshape(2000, int(tmp1.shape[0]/2000), -1)
+        tmp2 = tmp1.reshape(n, int(tmp1.shape[0]/n), -1)
         bds = np.nanmean(tmp2, axis=0)
     return bds
 
