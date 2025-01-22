@@ -59,34 +59,37 @@ class HasAttr(object):
     Type = AttrEnum(['Unknown'])
 
     def __init__(self, **kwargs):
+        self._defined_attrs = {}
+        self._init_attributes(kwargs)
+
+    def _attr_defined(self, attr):
+        return attr in self._defined_attrs
+
+    def _init_attributes(self, kwargs, set_default=True):
         cls = type(self)
         class_attrs = dict(inspect.getmembers(cls, lambda o: isinstance(o, Attr)))
-        # Initialize all attributes with its default
-        for name, value in class_attrs.items():
-            if not value.dependant:
-                setattr(self, name, value.default)
+        if set_default:
+            # Initialize all attributes with its default
+            for name, value in class_attrs.items():
+                if not value.dependant:
+                    setattr(self, name, value.default)
         # Set values of defined attributes in the arguments
         for name, value in kwargs.items():
             if name not in class_attrs:
                 raise AttributeError(f"Attribute <{name}> not found in <{cls.__name__}>!")
             if class_attrs[name].dependant:
-                raise AttributeError(f"Attribute <{name}> of class <{cls.__name__}> is dependant and cannot be manually initialized!")
+                raise AttributeError(
+                    f"Attribute <{name}> of class <{cls.__name__}> is dependant and cannot be manually initialized!")
             setattr(self, name, value)
+            self._defined_attrs[name] = value
 
     @classmethod
     def _get_attributes(cls):
         return dict(inspect.getmembers(cls, lambda o: isinstance(o, Attr)))
 
     def configure(self, **kwargs):
-        cls = type(self)
-        class_attrs = dict(inspect.getmembers(cls, lambda o: isinstance(o, Attr)))
-        for name, value in kwargs.items():
-            if name not in class_attrs:
-                raise AttributeError(f"Attribute <{name}> not found in <{cls.__name__}>!")
-            if class_attrs[name].dependant:
-                raise AttributeError(f"Attribute <{name}> of class <{cls.__name__}> is dependant and cannot be manually initialized!")
+        self._init_attributes(kwargs, set_default=False)
 
-            setattr(self, name, value)
         self._check_required()
         self._init_dependant()
         self._init_dependant_automatic()
