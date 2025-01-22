@@ -192,7 +192,7 @@ class TemporalAverage(Monitor):
                     bnb_state = nb.carray(address_as_void_pointer(bs_addr), bs_shape, dtype=bs_dtype)
                     # bnb_state = self.buffer_state
                     i = nb.intc(step / n_interim_samples)
-                    bnb_state[i, :, :] = np.sum(i_bnb_state, axis=0) / ibs_shape[0]
+                    bnb_state[i, :, :] = i_bnb_state.sum(axis=0) / ibs_shape[0]
 
             if n_obs > 0:
                 i_bnb_observed = nb.carray(address_as_void_pointer(ibo_addr), ibo_shape, dtype=ibo_dtype)
@@ -202,6 +202,6 @@ class TemporalAverage(Monitor):
                     bnb_observed = nb.carray(address_as_void_pointer(bo_addr), bo_shape, dtype=bo_dtype)
                     # bnb_observed = self.buffer_observed
                     i = nb.intc(step / n_interim_samples)
-                    bnb_observed[i, :, :] = np.sum(i_bnb_observed, axis=0) / ibo_shape[0]
+                    bnb_observed[i, :, :] = i_bnb_observed.sum(axis=0) / ibo_shape[0]
 
         return m_sample

@@ -8,8 +8,10 @@
 # ==========================================================================
 import numpy as np
 import numba as nb
+from overrides import overrides
 
 from neuronumba.basic.attr import Attr
+from neuronumba.fitting.fic.fic import FICHerzog2022
 from neuronumba.numba_tools.addr import address_as_void_pointer
 from neuronumba.numba_tools.types import NDA_f8_2d
 from neuronumba.simulator.models import Model
@@ -27,6 +29,7 @@ class Deco2014(LinearCouplingModel):
     observable_vars = Model._build_var_dict(['Ie', 're'])
     n_observable_vars = len(observable_vars)
 
+    auto_fic = Attr(default=False, attributes=Model.Type.Model)
     taon = Attr(default=100.0, attributes=Model.Type.Model)
     taog = Attr(default=10.0, attributes=Model.Type.Model)
     gamma_e = Attr(default=0.641, attributes=Model.Type.Model)
@@ -45,8 +48,11 @@ class Deco2014(LinearCouplingModel):
     J = Attr(default=1.0, attributes=Model.Type.Model)
     I_external = Attr(default=0.0, attributes=Model.Type.Model)
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    @overrides
+    def _init_dependant(self):
+        super()._init_dependant()
+        if self.auto_fic and not self._attr_defined('J'):
+            self.J = FICHerzog2022().compute_J(self.weights, self.g)
 
     @property
     def get_state_vars(self):
@@ -79,8 +85,8 @@ class Deco2014(LinearCouplingModel):
         @nb.njit(nb.types.UniTuple(nb.f8[:, :], 2)(nb.f8[:, :], nb.f8[:, :]))
         def Deco2014_dfun(state: NDA_f8_2d, coupling: NDA_f8_2d):
             # Clamping, needed in Deco2014 model and derivatives...
-            Se = np.clip(state[0, :],0.0,1.0)
-            Si = np.clip(state[1, :],0.0,1.0)
+            Se = state[0, :].clip(0.0,1.0)
+            Si = state[1, :].clip(0.0,1.0)
 
             # Eq for I^E (5). I_external = 0 => resting state condition.
             Ie = m[np.intp(P.Jext_e)] * m[np.intp(P.I0)] + m[np.intp(P.w)] * m[np.intp(P.J_NMDA)] * Se + m[np.intp(P.J_NMDA)] * coupling[0, :] - m[np.intp(P.J)] * Si + m[np.intp(P.I_external)]
