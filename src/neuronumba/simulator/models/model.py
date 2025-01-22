@@ -3,6 +3,7 @@ from enum import IntEnum
 
 import numba as nb
 import numpy as np
+from overrides import overrides
 
 from neuronumba.basic.attr import HasAttr, Attr, AttrEnum
 
@@ -29,6 +30,7 @@ class Model(HasAttr):
         setattr(cls, 'P', cls._build_parameter_enum())
 
     def configure(self, **kwargs):
+        # Kind of a hack to avoid dynamic class variables not being copied when using multiprocessing on Windows
         if os.name == "nt":
             cls = type(self)
             setattr(cls, 'P', cls._build_parameter_enum())
@@ -79,7 +81,7 @@ class Model(HasAttr):
 
     def get_numba_coupling(self):
         """
-        :return: numba function with signature nb.f8[:, :](nb.f8[:, :], nb.f8[:, :]) (weights, state) -> coupling
+        :return: numba function with signature nb.f8[:, :](nb.f8[:, :]) (state) -> coupling
         """
         raise NotImplementedError
 
@@ -113,6 +115,7 @@ class LinearCouplingModel(Model):
         # Make sure we store a copy and not a view
         self.weights_t = self.weights.T.copy()
 
+    @overrides
     def get_numba_coupling(self):
         """
         This is the default coupling for most models, linear coupling using the weights matrix
@@ -121,19 +124,18 @@ class LinearCouplingModel(Model):
         :return:
         """
 
-        g = self.g
-        wt = self.weights_t.copy()
+        wtg = self.g * self.weights_t.copy()
 
         # TODO: why adding the signature raises a numba warning about state_coupled being a non contiguous array?
         @nb.njit #(nb.f8[:, :](nb.f8[:, :], nb.f8[:, :]))
-        def linear_coupling(state_coupled):
+        def linear_coupling(state):
             """
 
-            :param state_coupled: (n_cvars, n_rois) this is a subset of the full state that
+            :param state: (n_cvars, n_rois) this is a subset of the full state that
                                     contains only the variables to couple
             :return:
             """
-            r = np.dot(state_coupled, wt)
-            return r * g
+            r = state @ wtg
+            return r
 
         return linear_coupling
