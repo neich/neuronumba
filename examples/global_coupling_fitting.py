@@ -1,15 +1,18 @@
 import argparse
 import copy
 import csv
+import gc
 import os
 import time
 
 import h5py
 import numpy as np
 from pathos.multiprocessing import ProcessPool
+import matplotlib.pyplot as plt
 
 from neuronumba.bold import BoldStephan2008
 from neuronumba.simulator.models import Deco2014
+from neuronumba.simulator.models.montbrio import Montbrio
 from neuronumba.tools import filterps, hdf
 from neuronumba.tools.filters import BandPassFilter
 from neuronumba.observables import PhFCD, FC
@@ -159,7 +162,6 @@ def process_bold_signals(bold_signals, exec_env):
     N = bold_signals[next(iter(bold_signals))].shape[1]
 
     observables = exec_env['observables']
-    tr = exec_env['tr']
 
     # First, let's create a data structure for the observables operations...
     measureValues = {}
@@ -175,10 +177,10 @@ def process_bold_signals(bold_signals, exec_env):
         for ds in observables:  # Now, let's compute each measure and store the results
             measure = observables[ds][0]
             accumulator = observables[ds][1]
-            bpf = BandPassFilter(k=2, flp=0.008, fhi=0.08, tr=tr)
-            bold_filt = bpf.filter(signal)
+            # bpf = BandPassFilter(k=2, flp=0.008, fhi=0.08, tr=tr)
+            # bold_filt = bpf.filter(signal)
             # FC, swFCD, phFCD, ...
-            proc_signal = measure.from_fmri(bold_filt)
+            proc_signal = measure.from_fmri(signal)
             measureValues[ds] = accumulator.accumulate(measureValues[ds], pos, proc_signal[ds])
 
         print(" -> computed in {} seconds".format(time.perf_counter() - start_time))
@@ -199,8 +201,29 @@ def eval_one_param(exec_env, g):
         while np.isnan(bds).any() or (np.abs(bds) > np.inf).any():  # This is certainly dangerous, we can have an infinite loop... let's hope not! ;-)
             raise RuntimeError(f"Numeric error computing subject {nsub}/{num_subjects} for g={g}")
         simulated_bolds[nsub] = bds
+        gc.collect()
 
     observables = exec_env['observables']
+    dist = process_bold_signals(simulated_bolds, exec_env)
+    # now, add {label: currValue} to the dist dictionary, so this info is in the saved file (if using the decorator @loadOrCompute)
+    dist['g'] = g
+
+    return dist
+
+
+def eval_one_param_multi(exec_env, g):
+    simulated_bolds = {}
+    num_subjects = exec_env['num_subjects']
+    pool = ProcessPool(nodes=10)
+    nsl = list(range(num_subjects))
+    ees = [exec_env for _ in nsl]
+    gs = [g for _ in nsl]
+    results = pool.map(simulate_single_subject, ees, gs)
+    for i, bds in enumerate(results):
+        if np.isnan(bds).any() or (np.abs(bds) > np.inf).any():  # This is certainly dangerous, we can have an infinite loop... let's hope not! ;-)
+            raise RuntimeError(f"Numeric error computing subject {i}/{num_subjects} for g={g}")
+        simulated_bolds[i] = bds
+
     dist = process_bold_signals(simulated_bolds, exec_env)
     # now, add {label: currValue} to the dist dictionary, so this info is in the saved file (if using the decorator @loadOrCompute)
     dist['g'] = g
@@ -217,6 +240,7 @@ def compute_g(exec_env, g):
     else:
         print(f"Starting computation for g={g}")
         sim_measures = eval_one_param(exec_env, g)
+        # sim_measures = eval_one_param_multi(exec_env, g)
         hdf.savemat(out_file, sim_measures)
 
     observables = exec_env['observables']
@@ -225,6 +249,7 @@ def compute_g(exec_env, g):
         result[ds] = observables[ds][2].distance(sim_measures[ds], processed[ds])
         print(f" {ds} for g={g}: {result[ds]};", end='', flush=True)
 
+    result['g'] = g
     return result
 
 
@@ -263,6 +288,7 @@ def process_empirical_subjects(bold_signals, observables, bpf, verbose=True):
 def run():
     parser = argparse.ArgumentParser()
 
+    parser.add_argument("--nproc", help="Number of parallel processes", type=int, default=10)
     parser.add_argument("--g-range", nargs=3, help="Parameter sweep range for G (start, end, step)", type=float, required=True)
     parser.add_argument("--model", help="Model to use (Hopf, Deco2014)", type=str, default='Hopf')
     parser.add_argument("--out-path", help="Path to folder for output results", type=str, required=True)
@@ -318,9 +344,14 @@ def run():
         obs_var = 'x'
     elif args.model == 'Deco2014':
         model = Deco2014()
-        integrator = EulerStochastic(dt=dt, sigmas=np.r_[1e-2, 1e-2])
+        integrator = EulerStochastic(dt=dt, sigmas=np.r_[1e-3, 1e-3])
         bold = True
         obs_var = 're'
+    elif args.model == 'Montbrio':
+        model = Montbrio()
+        integrator = EulerStochastic(dt=dt, sigmas=np.r_[1e-3, 0.0, 0.0, 0.0, 0.0, 0.0])
+        obs_var = 'r_e'
+
     else:
         raise RuntimeError(f"Model <{args.model}> not supported!")
 
@@ -363,11 +394,11 @@ def run():
     #     't_max_neuronal': t_max_neuronal,
     #     't_warmup': t_warmup,
     #     'sampling_period': sampling_period
-    # }, 2.0)
+    # }, 2.15)
     # exit(0)
 
     # We use parallel processing to compute all the simulations
-    pool = ProcessPool(nodes=10)
+    pool = ProcessPool(nodes=args.nproc)
     rn = list(range(len(gs)))
     # Not entirely sure that the deepcopy() function is needed, but I use it when the object is going to be accessed
     # in read-write mode.
@@ -390,6 +421,17 @@ def run():
     } for i, _ in enumerate(rn)]
 
     results = pool.map(compute_g, ee, gs)
+    fig, ax = plt.subplots()
+    rs = sorted(results, key=lambda r: r['g'])
+    g = [r['g'] for r in rs]
+    data = [r[observable_name] for r in rs]
+
+    ax.plot(g, data)
+
+    ax.set(xlabel=f'G (global coupling) for model {args.model}', ylabel=observable_name,
+           title='Global coupling fitting')
+
+    plt.show()
 
 if __name__ == '__main__':
     run()
