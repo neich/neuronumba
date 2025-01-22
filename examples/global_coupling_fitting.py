@@ -308,7 +308,7 @@ def run():
     # depending on the scanner setting used to capture the BOLD signal
     tr = args.tr
     # We will discard the first t_min seconds of the simulation
-    t_min = 10.0 * tr
+    t_min = 10.0 * tr / 1000.0
 
     fmris = load_subjects_data(args.fmri_path)
     n_subj = len(fmris)
@@ -319,7 +319,7 @@ def run():
         timeseries[i, :, :] = fmri
 
     # Compute the simulation length according to input data
-    t_max = t_max * tr if args.tmax is None else args.tmax
+    t_max = t_max * tr / 1000.0 if args.tmax is None else args.tmax
     # Compute simulation time in milliseconds
     t_max_neuronal = (t_max + t_min - 1) * 1000.0
     t_warmup = t_min * 1000.0
@@ -350,6 +350,7 @@ def run():
     elif args.model == 'Montbrio':
         model = Montbrio()
         integrator = EulerStochastic(dt=dt, sigmas=np.r_[1e-3, 0.0, 0.0, 0.0, 0.0, 0.0])
+        bold = True
         obs_var = 'r_e'
 
     else:
