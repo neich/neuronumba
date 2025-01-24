@@ -33,7 +33,7 @@ class EulerStochastic(Integrator):
 
     def get_numba_scheme(self, dfun):
         dt = self.dt
-        stimulus = np.empty((1, 1))
+        stimulus = np.zeros((1, 1))
         sigmas = self.sigmas
         sqrt_dt = self._sqrt_dt
 
