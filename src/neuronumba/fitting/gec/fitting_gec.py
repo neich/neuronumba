@@ -22,26 +22,26 @@ from neuronumba.observables.linear.linearfc import LinearFC
 from neuronumba.tools import filterps
 
 # time lagged covariance without SC
-def calc_COV_emp(tss, timelag=1):
+def calc_COV_emp(tss, timelag = 1):
     """
     wo = without SC mask
-
+    
     Parameters
     ----------
     tss : non-perturbed timeseries, in format (n_roi, n_timesteps)
     timelag : the number of timesteps of your timelag, default = 1
-
+    
     Returns
     -------
     time-lagged cov matrix in format(n_roi, n_roi)
     """
     n_roi = tss.shape[0]
-    EC = np.zeros((n_roi, n_roi))
+    EC    = np.zeros((n_roi,n_roi))
     for i in range(n_roi):
         for j in range(n_roi):
-            correlation = signal.correlate(tss[i, :] - tss[i, :].mean(), tss[j, :] - tss[j, :].mean(), mode='same')
-            lags = signal.correlation_lags(tss[i, :].shape[0], tss[j, :].shape[0], mode='same')
-            EC[i, j] = correlation[lags == timelag] / tss.shape[1]
+            correlation = signal.correlate(tss[i,:] - tss[i,:].mean(), tss[j,:] - tss[j,:].mean(), mode = 'full')
+            lags        = signal.correlation_lags(tss[i,:].shape[0], tss[j,:].shape[0], mode = 'full')
+            EC[i,j]     = correlation[lags == timelag] / tss.shape[1]
     return EC
 
 
@@ -55,7 +55,16 @@ def calc_H_freq(all_HC_fMRI, N, Tmax, TR, bpf):
     return 2 * np.pi * f_diff  # omega
 
 
-def update_EC(eps_fc, eps_cov, FCemp, FCsim, covemp, covsim, SC, only_positive=True):
+def update_EC(
+    eps_fc, 
+    eps_cov, 
+    FCemp, 
+    FCsim, 
+    covemp, 
+    covsim, 
+    SC, 
+    only_positive=True,
+    maxC=0.2):
     """
     Parameters
     ----------
@@ -67,6 +76,7 @@ def update_EC(eps_fc, eps_cov, FCemp, FCsim, covemp, covsim, SC, only_positive=T
     covsim   : simulated effective connectivity, format (n_roi, n_roi)
     SC       : structural connectivity, format (n_roi, n_roi)
     only_positive : default = True, to keep the update of the SC in positive values
+    maxC     : Scaling of the SCnew matrix
             
     Returns
     -------
@@ -83,12 +93,12 @@ def update_EC(eps_fc, eps_cov, FCemp, FCsim, covemp, covsim, SC, only_positive=T
     if only_positive == True:
         SCnew[SCnew < 0] = 0
     SCnew /= np.max(abs(SCnew))
-    SCnew *= 0.2
+    SCnew *= maxC
 
     return SCnew
 
 
-def calc_sigratio(covsim):
+def calc_sigratio(cov):
     """
     The calc_sigratio function calculates the normalization factor for the 
     time-lagged covariance matrix. This is used so that the FC, which is a 
@@ -97,100 +107,116 @@ def calc_sigratio(covsim):
     
     Parameters
     ----------
-    covsim : simulated tss put through calc_EC, format (n_roi,n_roi)
+    cov : tss put through calc_EC, format (n_roi,n_roi)
 
     Returns
     -------
     sigratios in format (n_roi,n_roi)
 
     """     
-    sr = np.zeros((covsim.shape))        
-    for i in range(covsim.shape[0]):
-        for j in range(covsim.shape[1]):
-            sr[i,j] = 1/np.sqrt(abs(covsim[i,i]))/np.sqrt(abs(covsim[j,j]))
+    sr = np.zeros((cov.shape))        
+    for i in range(cov.shape[0]):
+        for j in range(cov.shape[1]):
+            sr[i,j] = 1/np.sqrt(abs(cov[i,i]))/np.sqrt(abs(cov[j,j]))
     return sr
 
 
 class FitGEC(HasAttr):
     tau = Attr(default=1.0)
     g = Attr(default=1.0)
-    n_iter = Attr(default=10000)
-    olderror = Attr(default=5000)
-    epsilon = Attr(default=1e-5)
-    its_test = Attr(default=200)
+    max_iters = Attr(default=10000)
+    convergence_epsilon = Attr(default=1e-5)
+    convergence_test_iters = Attr(default=100)
+    sigma = Attr(default=0.1)
+    eps_fc = Attr(default=0.000)
+    eps_cov = Attr(defaults=0.0001)
+    verbose_print = Attr(defaults=False)
 
-# --------------- fit gEC
-    def fitGEC(self, FC_emp, COV_emp, SC, model, TR):
+    # Some debug variable members from last run
+    last_run_num_of_iters = 0
+    last_run_reason_of_termination = ""
+    last_run_convergence_err = np.empty()
+    last_run_convergence_err_cov = np.empty()
+    last_run_convergence_err_FC = np.empty()
+
+    # --------------- fit gEC
+    def fitGEC(self, timeseries, FC_emp, starting_SC, model, TR):
         # ------- number or RoIs
         n_roi = np.shape(SC)[0]
+
+        # We need two empirical coveriances computed from the timeseries. The non-lag for the computation of the 
+        # sigratio and the Tau lagged one for GEC computatio. 
+        # COV_emp = func.calc_COV_emp(timeseries, timelag=0)
+        COV_emp = np.cov(timeseries)
+        COV_emp_lag = func.calc_COV_emp(timeseries, timelag=self.tau)
     
-        # To get the simulated FC and EC from the linearized hopf model,
-        # to initialise some matrices. Starts with SC and the hopf frequencies
-        # hopf_int returns: simulated functional connectivity matrix (FC_sim),
-        #                   covariance matrix (COV_sim),
-        #                   total covariance matrix (COVsimtotal),
-        #                   Jacobian matrix (A)
-        A, Qn = model.compute_linear_matrix(SC, 0.01)
-        obs = LinearFC()
-        result =  obs.from_matrix(A, Qn)
-        FC_sim = result['FC']
-        COVsimtotal = result['CVth']
-        COV_sim = result['CV']
-    
-        COV_tausim = np.matmul(expm((self.tau * TR) * A), COVsimtotal)  # total simulated covariance at time lag self.tau
-        COV_tausim = COV_tausim[0:n_roi, 0:n_roi]  # simulated covariance at time lag self.tau (nodes of interest)
-    
-        # scaling factors based on the simulated and empirical covariance matrices
-        sigrat_sim = calc_sigratio(COV_sim)
+        # Scaling factors based on the empirical covariance matrices
         sigrat_emp = calc_sigratio(COV_emp)
-        newSC = SC
-    
-        # In case you want to check the trajectory of the error, intialise some object
-        save_err = np.zeros((self.n_iter))
-        save_err_cov = np.zeros((self.n_iter))
-        save_err_FC = np.zeros((self.n_iter))
 
-        olderror = self.olderror
+        # Initializing SC matrix
+        newSC = starting_SC
 
-        for i in range(self.n_iter):
-            save_err[i] = np.mean((FC_emp - FC_sim) ** 2) + np.mean(((sigrat_emp * COV_emp - sigrat_sim * COV_tausim) ** 2))
-            save_err_cov[i] = np.mean(((sigrat_emp * COV_emp - sigrat_sim * COV_tausim) ** 2))
-            save_err_FC[i] = np.mean((FC_emp - FC_sim) ** 2)
-    
-            # adjust the arguments eps_fc and eps_cov to change the updating of the
-            # weights in the gEC depending on the difference between the empirical and
-            # simulated FC and time-lagged covariance
-            newSC = update_EC(eps_fc=0.000, eps_cov=0.0001, FCemp=FC_emp,
-                              FCsim=FC_sim.mean(axis=0), covemp=sigrat_emp * COV_emp,
-                              covsim=sigrat_sim * COV_sim, SC=newSC)
-    
-            # hopf_int returns: simulated functional connectivity matrix (FC_sim),
-            #                   covariance matrix (COV_sim),
-            #                   total covariance matrix (COVsimtotal),
-            #                   Jacobian matrix (A)
-            A, Qn = model.compute_linear_matrix(newSC, 0.01)
+        # We keep track of the trajectory of the error (e.g. for debbuging)
+        # TODO: Maybe we can puted as a class member so we can access from outside to debug?
+        self.last_run_convergence_err = np.zeros((self.max_iters))
+        self.last_run_convergence_err_cov = np.zeros((self.max_iters))
+        self.last_run_convergence_err_FC = np.zeros((self.max_iters))
+
+        # Used to check if we are improving the error on convergency test
+        olderror = None
+
+        # Some information for verbose printing
+        verbose_stop_reason = f"max iterations ({max_iters}) reached"
+
+        i = 0
+        for i in range(self.max_iters):
+            # Compute the model (linear hopf) for this iteration. We get:
+            #   FC_sim: simulated functional connectivity matrix
+            #   COV_sim: simulatied covaraiance matrix
+            #   COVsimtotal: total simulated covariance matrix
+            #   A: the Jacobian matrix
+            A, Qn = model.compute_linear_matrix(newSC, self.sigma)
             obs = LinearFC()
-            result = obs.from_matrix(A, Qn)
+            result =  obs.from_matrix(A, Qn)
             FC_sim = result['FC']
             COVsimtotal = result['CVth']
             COV_sim = result['CV']
-    
+
             sigrat_sim = calc_sigratio(COV_sim)  # scaling factor based on the simulated covariance matrix
-            COV_tausim = np.matmul(expm((self.tau * TR) * A), COVsimtotal)  # total simulated covariance at time lag self.tau
-            COV_tausim = COV_tausim[0:n_roi, 0:n_roi]  # simulated covariance at time lag self.tau (nodes of interest)
-    
-            if i % self.its_test < 0.1:
-                errornow = save_err[i]
-                # if the current error is smaller than epsilon from last iteration
-                if (olderror - errornow) / errornow < self.epsilon:
+            COV_tausim = np.matmul(expm((self.tau * TR) * A), COVsimtotal)  # total simulated covariance at time lag Tau
+            COV_tausim = COV_tausim[0:n_roi, 0:n_roi]  # simulated covariance at time lag Tau (nodes of interest)
+
+            # Compute errors for this iteration
+            self.last_run_convergence_err[i] = np.mean(np.mean((FC_emp - FC_sim) ** 2) + np.mean(((sigrat_emp * COV_emp_lag - sigrat_sim * COV_tausim) ** 2)))
+            self.last_run_convergence_err_cov[i] = np.mean(((sigrat_emp * COV_emp_lag - sigrat_sim * COV_tausim) ** 2))
+            self.last_run_convergence_err_FC[i] = np.mean((FC_emp - FC_sim) ** 2)
+
+            # adjust the arguments eps_fc and eps_cov to change the updating of the
+            # weights in the gEC depending on the difference between the empirical and
+            # simulated FC and time-lagged covariance
+            newSC = update_EC(eps_fc=self.eps_fc, eps_cov=self.eps_cov, FCemp=FC_emp,
+                            FCsim=FC_sim.mean(axis=0), covemp=sigrat_emp * COV_emp_lag,
+                            covsim=sigrat_sim * COV_sim, SC=newSC)        
+
+            # If its time, perform the convergence 
+            if i != 0 and i % self.convergence_test_iters == 0:
+                errornow = self.last_run_convergence_err[i]
+                # if the curent error is smaller than epsilon from last iteration
+                if olderror and (olderror - errornow) / errornow < self.convergence_epsilon:  
                     save_SC = newSC
+                    verbose_stop_reason = f"convergence error reached at epsilon ({self.convergence_epsilon})"
                     break
                 # if the current error is larger than the one from last iteration
-                if olderror < errornow:
+                if olderror and olderror < errornow:  
+                    verbose_stop_reason = f"convergence error increased by {errornow-olderror}"
                     break
                 # update old error by current error
-                olderror = errornow
+                olderror = errornow  
             save_SC = newSC
+
+        self.reason_of_termination = f"GEC succesfully computed in {i} iterations. Reason for termination: {verbose_stop_reason}."
+        self.last_run_num_of_iters = i
+        
         return save_SC
 
 
