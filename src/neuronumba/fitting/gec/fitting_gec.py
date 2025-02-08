@@ -7,8 +7,7 @@
 # rest and task.Sci. Adv.9,eade6049(2023).DOI:10.1126/sciadv.ade6049
 #
 # Created on Wed Jun 12 16:02:05 2024
-# @author: Wiep Francisca Stikvoort, modified by dagush
-# Goal: Isolate the gEC fitting in one script
+# @author: Wiep Francisca Stikvoort, modified by dagush & Albert Juncà
 # =======================================================================
 # Import necessary packages
 from email.policy import default
@@ -128,27 +127,26 @@ class FitGEC(HasAttr):
     convergence_epsilon = Attr(default=1e-5)
     convergence_test_iters = Attr(default=100)
     sigma = Attr(default=0.1)
-    eps_fc = Attr(default=0.000)
-    eps_cov = Attr(defaults=0.0001)
-    verbose_print = Attr(defaults=False)
+    eps_fc = Attr(default=0.0004)
+    eps_cov = Attr(default=0.0001)
+    verbose_print = Attr(default=False)
 
     # Some debug variable members from last run
     last_run_num_of_iters = 0
     last_run_reason_of_termination = ""
-    last_run_convergence_err = np.empty()
-    last_run_convergence_err_cov = np.empty()
-    last_run_convergence_err_FC = np.empty()
+    last_run_convergence_err = None
+    last_run_convergence_err_cov = None
+    last_run_convergence_err_FC = None
 
     # --------------- fit gEC
     def fitGEC(self, timeseries, FC_emp, starting_SC, model, TR):
         # ------- number or RoIs
-        n_roi = np.shape(SC)[0]
+        n_roi = np.shape(starting_SC)[0]
 
         # We need two empirical coveriances computed from the timeseries. The non-lag for the computation of the 
-        # sigratio and the Tau lagged one for GEC computatio. 
-        # COV_emp = func.calc_COV_emp(timeseries, timelag=0)
+        # sigratio and the Tau lagged for GEC computation. 
         COV_emp = np.cov(timeseries)
-        COV_emp_lag = func.calc_COV_emp(timeseries, timelag=self.tau)
+        COV_emp_tau = calc_COV_emp(timeseries, timelag=self.tau)
     
         # Scaling factors based on the empirical covariance matrices
         sigrat_emp = calc_sigratio(COV_emp)
@@ -157,7 +155,6 @@ class FitGEC(HasAttr):
         newSC = starting_SC
 
         # We keep track of the trajectory of the error (e.g. for debbuging)
-        # TODO: Maybe we can puted as a class member so we can access from outside to debug?
         self.last_run_convergence_err = np.zeros((self.max_iters))
         self.last_run_convergence_err_cov = np.zeros((self.max_iters))
         self.last_run_convergence_err_FC = np.zeros((self.max_iters))
@@ -165,11 +162,13 @@ class FitGEC(HasAttr):
         # Used to check if we are improving the error on convergency test
         olderror = None
 
-        # Some information for verbose printing
-        verbose_stop_reason = f"max iterations ({max_iters}) reached"
+        # Some extra information (mostly for debuging)
+        verbose_stop_reason = f"max iterations ({self.max_iters}) reached"
 
         i = 0
         for i in range(self.max_iters):
+            print(f"Iter: {i}")
+
             # Compute the model (linear hopf) for this iteration. We get:
             #   FC_sim: simulated functional connectivity matrix
             #   COV_sim: simulatied covaraiance matrix
@@ -183,30 +182,30 @@ class FitGEC(HasAttr):
             COV_sim = result['CV']
 
             sigrat_sim = calc_sigratio(COV_sim)  # scaling factor based on the simulated covariance matrix
-            COV_tausim = np.matmul(expm((self.tau * TR) * A), COVsimtotal)  # total simulated covariance at time lag Tau
-            COV_tausim = COV_tausim[0:n_roi, 0:n_roi]  # simulated covariance at time lag Tau (nodes of interest)
-
-            # Compute errors for this iteration
-            self.last_run_convergence_err[i] = np.mean(np.mean((FC_emp - FC_sim) ** 2) + np.mean(((sigrat_emp * COV_emp_lag - sigrat_sim * COV_tausim) ** 2)))
-            self.last_run_convergence_err_cov[i] = np.mean(((sigrat_emp * COV_emp_lag - sigrat_sim * COV_tausim) ** 2))
-            self.last_run_convergence_err_FC[i] = np.mean((FC_emp - FC_sim) ** 2)
+            COV_sim_tau = np.matmul(expm((self.tau * TR) * A), COVsimtotal)  # total simulated covariance at time lag Tau
+            COV_sim_tau = COV_sim_tau[0:n_roi, 0:n_roi]  # simulated covariance at time lag Tau (nodes of interest)
 
             # adjust the arguments eps_fc and eps_cov to change the updating of the
             # weights in the gEC depending on the difference between the empirical and
             # simulated FC and time-lagged covariance
             newSC = update_EC(eps_fc=self.eps_fc, eps_cov=self.eps_cov, FCemp=FC_emp,
-                            FCsim=FC_sim.mean(axis=0), covemp=sigrat_emp * COV_emp_lag,
-                            covsim=sigrat_sim * COV_sim, SC=newSC)        
+                            FCsim=FC_sim, covemp=sigrat_emp * COV_emp_tau,
+                            covsim=sigrat_sim * COV_sim_tau, SC=newSC)
 
-            # If its time, perform the convergence 
-            if i != 0 and i % self.convergence_test_iters == 0:
+            # Compute errors for this iteration. We saved them for debbuging and such
+            self.last_run_convergence_err_FC[i] = np.mean((FC_emp - FC_sim) ** 2)
+            self.last_run_convergence_err_cov[i] = np.mean((sigrat_emp * COV_emp_tau - sigrat_sim * COV_sim_tau) ** 2)
+            self.last_run_convergence_err[i] = self.last_run_convergence_err_FC[i] + self.last_run_convergence_err_cov[i]        
+
+            # Check for convergence every "convergence_test_iters" times
+            if i != 0 and (i % self.convergence_test_iters == 0):
                 errornow = self.last_run_convergence_err[i]
-                # if the curent error is smaller than epsilon from last iteration
-                if olderror and (olderror - errornow) / errornow < self.convergence_epsilon:  
+                # Stop if no more improvements are made
+                if olderror and (((olderror - errornow) / errornow) < self.convergence_epsilon):  
                     save_SC = newSC
                     verbose_stop_reason = f"convergence error reached at epsilon ({self.convergence_epsilon})"
                     break
-                # if the current error is larger than the one from last iteration
+                # Or if error is growing instate of reducing
                 if olderror and olderror < errornow:  
                     verbose_stop_reason = f"convergence error increased by {errornow-olderror}"
                     break

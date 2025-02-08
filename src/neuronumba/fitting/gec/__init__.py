@@ -1,0 +1,1 @@
+from neuronumba.fitting.gec.fitting_gec import FitGEC
