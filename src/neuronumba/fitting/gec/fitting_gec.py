@@ -129,7 +129,6 @@ class FitGEC(HasAttr):
     sigma = Attr(default=0.1)
     eps_fc = Attr(default=0.0004)
     eps_cov = Attr(default=0.0001)
-    verbose_print = Attr(default=False)
 
     # Some debug variable members from last run
     last_run_num_of_iters = 0
@@ -167,8 +166,6 @@ class FitGEC(HasAttr):
 
         i = 0
         for i in range(self.max_iters):
-            print(f"Iter: {i}")
-
             # Compute the model (linear hopf) for this iteration. We get:
             #   FC_sim: simulated functional connectivity matrix
             #   COV_sim: simulatied covaraiance matrix
