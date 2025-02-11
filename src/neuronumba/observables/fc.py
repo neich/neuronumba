@@ -1,11 +1,11 @@
 import numpy as np
 # import numba as nb
 
-from neuronumba.observables.base_observable import Observable
+from neuronumba.observables.base_observable import ObservableFMRI
 # from neuronumba.basic.attr import Attr
 
 
-class FC(Observable):
+class FC(ObservableFMRI):
     """
     Main FC class.
 

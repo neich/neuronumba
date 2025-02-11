@@ -16,7 +16,7 @@
 # =======================================================================
 
 import numpy as np
-from neuronumba.observables.base_observable import Observable
+from neuronumba.observables.base_observable import ObservableFMRI
 from neuronumba.basic.attr import Attr
 import neuronumba.tools.matlab_tricks as tricks
 
@@ -57,7 +57,7 @@ def inside_out(ts, nlag):
     return {"FowRev": fow_rev, "AsymRev": asym_rev, "AsymFow": asym_fow}
 
 
-class InsideOut(Observable):
+class InsideOut(ObservableFMRI):
     """
     Main Insideout class.
 

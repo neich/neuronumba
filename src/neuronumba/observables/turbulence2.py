@@ -3,7 +3,7 @@
 import numpy as np
 
 from neuronumba.basic.attr import Attr
-from neuronumba.observables.base_observable import Observable
+from neuronumba.observables.base_observable import ObservableFMRI
 from neuronumba.observables.turbulence import Turbulence
 from neuronumba.tools import matlab_tricks
 from scipy.optimize import curve_fit
@@ -93,7 +93,7 @@ class Information_transfer(Turbulence):
         }
 
 
-class Information_cascade(Observable):
+class Information_cascade(ObservableFMRI):
     """
     Calculate Information cascade flow and Information cascade.
     Information cascade flow:
