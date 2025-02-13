@@ -22,7 +22,9 @@ class BandPassFilter(HasAttr):
         :return:
         """
         t_max, n_rois = signal.shape
-        fnq = 1. / (2. * self.tr)  # Nyquist frequency
+        # Convert to seconds (self.tr units are ms)
+        tr = self.tr / 1000.0
+        fnq = 1. / (2. * tr)  # Nyquist frequency
         Wn = [self.flp / fnq, self.fhi / fnq]  # butterworth bandpass non-dimensional frequency
         bfilt, afilt = butter(self.k, Wn, btype='band', analog=False, output='ba')  # construct the filter
         # bfilt = bfilt_afilt[0]; afilt = bfilt_afilt[1]  # numba doesn't like unpacking...

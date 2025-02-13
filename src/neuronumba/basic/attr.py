@@ -89,10 +89,10 @@ class HasAttr(object):
 
     def configure(self, **kwargs):
         self._init_attributes(kwargs, set_default=False)
-
         self._check_required()
         self._init_dependant()
         self._init_dependant_automatic()
+        return self
 
     def _check_required(self):
         cls = type(self)
