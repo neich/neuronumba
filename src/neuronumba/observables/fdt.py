@@ -1,3 +1,14 @@
+# =======================================================================
+# Computes the Viiolation of the Fluctuation-Dissipation Theorem.
+# 
+# From:
+# Gustavo Deco et al. ,Violations of the fluctuation-dissipation theorem 
+# reveal distinct nonequilibrium dynamics of brain states.
+# Phys. Rev. E108,064410(2023).DOI:10.1103/PhysRevE.108.064410
+#
+# Derived from matlab's Irene Acero Pousa code and ported by Albert Juncà
+# =======================================================================
+
 import numpy as np
 from neuronumba.observables.base_observable import Observable
 from neuronumba.basic.attr import Attr
