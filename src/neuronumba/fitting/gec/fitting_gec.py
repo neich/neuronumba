@@ -11,6 +11,7 @@
 # =======================================================================
 # Import necessary packages
 from email.policy import default
+import warnings
 
 import numpy as np
 from scipy import signal
@@ -139,6 +140,12 @@ class FitGEC(HasAttr):
 
     # --------------- fit gEC
     def fitGEC(self, timeseries, FC_emp, starting_SC, model, TR):
+        # Perform some checks on the starting_SC.
+        # At the moment we are only checking that at least diagonal is zeros, 
+        # but more can be added
+        if not np.allclose(np.diag(starting_SC), 0):
+            warnings.warn("Not all diagonal elemnts in starting_SC are zero.")
+
         # ------- number or RoIs
         n_roi = np.shape(starting_SC)[0]
 
