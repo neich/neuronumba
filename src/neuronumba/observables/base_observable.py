@@ -21,7 +21,7 @@ class Observable(HasAttr):
             bold_signal (ndarray): Bold signal with shape (n_rois, n_time_samples)
 
         Returns:
-            dict: dictonary with the results
+            dict: dictionary with the results
         """
         
         # ignoreNaN = 'ignore_nans' in kwargs and kwargs['ignore_nans']
@@ -30,10 +30,10 @@ class Observable(HasAttr):
         return self._compute_from_fmri(bold_signal)
 
     def from_surrogate(self, bold_signal):
-        n_parcells, t_max = bold_signal.shape
-        for seed in range(n_parcells):
+        r_rois, t_max = bold_signal.shape
+        for seed in range(r_rois):
             bold_signal[seed, :] = bold_signal[seed, np.random.permutation(t_max)]
-        bold_su = bold_signal[np.random.permutation(n_parcells), :]
+        bold_su = bold_signal[np.random.permutation(r_rois), :]
         return self.from_fmri(bold_su)
 
     def _compute_from_fmri(self, bold_signal):
