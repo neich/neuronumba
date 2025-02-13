@@ -9,8 +9,10 @@ import h5py
 import numpy as np
 from pathos.multiprocessing import ProcessPool
 import matplotlib.pyplot as plt
+plt.ion()
 
 from neuronumba.bold import BoldStephan2008
+from neuronumba.observables.sw_fcd import SwFCD
 from neuronumba.simulator.models import Deco2014
 from neuronumba.simulator.models.montbrio import Montbrio
 from neuronumba.tools import filterps, hdf
@@ -138,7 +140,7 @@ def simulate_single_subject(exec_env, g):
     bold = exec_env['bold']
     sampling_period = exec_env['sampling_period']
     if bold:
-        b = BoldStephan2008()
+        b = exec_env['bold_model']
         bds = b.compute_bold(signal, sampling_period)
     else:
         # Some models like Hopf do not require explicit computation of BOLD signal
@@ -177,8 +179,9 @@ def process_bold_signals(bold_signals, exec_env):
         for ds in observables:  # Now, let's compute each measure and store the results
             measure = observables[ds][0]
             accumulator = observables[ds][1]
-            # bpf = BandPassFilter(k=2, flp=0.008, fhi=0.08, tr=tr)
-            # bold_filt = bpf.filter(signal)
+            if observables[ds][3] is not None:
+                bpf = observables[ds][3]
+                signal = bpf.filter(signal)
             # FC, swFCD, phFCD, ...
             proc_signal = measure.from_fmri(signal)
             measureValues[ds] = accumulator.accumulate(measureValues[ds], pos, proc_signal[ds])
@@ -253,7 +256,7 @@ def compute_g(exec_env, g):
     return result
 
 
-def process_empirical_subjects(bold_signals, observables, bpf, verbose=True):
+def process_empirical_subjects(bold_signals, observables, bpf=None, verbose=True):
     # Process the BOLD signals
     # BOLDSignals is a dictionary of subjects {subjectName: subjectBOLDSignal}
     # observablesToUse is a dictionary of {observableName: observablePythonModule}
@@ -263,7 +266,7 @@ def process_empirical_subjects(bold_signals, observables, bpf, verbose=True):
 
     # First, let's create a data structure for the observables operations...
     measureValues = {}
-    for ds, (_, accumulator, _) in observables.items():
+    for ds, (_, accumulator, _, _) in observables.items():
         measureValues[ds] = accumulator.init(num_subjects, n_rois)
 
     # Loop over subjects
@@ -274,12 +277,13 @@ def process_empirical_subjects(bold_signals, observables, bpf, verbose=True):
         # BOLD signals from file have inverse shape
         signal = bold_signals[s].T  # LR_version_symm(tc[s])
 
-        signal_filt = bpf.filter(signal)
-        for ds, (observable, accumulator, _) in observables.items():
-            procSignal = observable.from_fmri(signal_filt)
+        if bpf is not None:
+            signal = bpf.filter(signal)
+        for ds, (observable, accumulator, _, _) in observables.items():
+            procSignal = observable.from_fmri(signal)
             measureValues[ds] = accumulator.accumulate(measureValues[ds], pos, procSignal[ds])
 
-    for ds, (observable, accumulator, _) in observables.items():
+    for ds, (observable, accumulator, _, _) in observables.items():
         measureValues[ds] = accumulator.postprocess(measureValues[ds])
 
     return measureValues
@@ -289,8 +293,12 @@ def run():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--nproc", help="Number of parallel processes", type=int, default=10)
-    parser.add_argument("--g-range", nargs=3, help="Parameter sweep range for G (start, end, step)", type=float, required=True)
+    parser.add_argument("--nsubj", help="Number of subject for the simulations", type=int, required=True)
+    parser.add_argument("--g", help="Single point execution for a global coupling value", type=float)
+    parser.add_argument("--g-range", nargs=3, help="Parameter sweep range for G (start, end, step)", type=float)
+    parser.add_argument("--bpf", nargs=3, help="Band pass fiter to apply to BOLD signal (k, lp freq, hp freq)", type=float, default=[2, 0.01, 0.1])
     parser.add_argument("--model", help="Model to use (Hopf, Deco2014)", type=str, default='Hopf')
+    parser.add_argument("--observable", help="Observable to use (FC, phFCD, swFCD)", type=str, default='phFCD')
     parser.add_argument("--out-path", help="Path to folder for output results", type=str, required=True)
     parser.add_argument("--tr", help="Time resolution of fMRI scanner (seconds)", type=float, required=True)
     parser.add_argument("--sc-scaling", help="Scaling factor for the SC matrix", type=float, default=0.2)
@@ -298,8 +306,6 @@ def run():
     parser.add_argument("--fmri-path", help="Path to fMRI timeseries data", type=str, required=True)
 
     args = parser.parse_args()  # for example, for a single test, use --ge-range 1.0 10.0 1.0
-
-    [g_Start, g_End, g_Step] = args.g_range
 
     # This is the data related to the dataset that we are going to load.
     # For your dataset, you need to figure these values
@@ -356,17 +362,27 @@ def run():
     else:
         raise RuntimeError(f"Model <{args.model}> not supported!")
 
-    # observable_name = 'FC'
-    observable_name = 'phFCD'
-
-    # Observable definition
-    # observables = {observable_name: (FC(), ConcatenatingAccumulator(), KolmogorovSmirnovStatistic())}
-    observables = {observable_name: (PhFCD(), ConcatenatingAccumulator(), KolmogorovSmirnovStatistic())}
+    observable_name = None
+    if args.observable == 'FC':
+        observable_name = 'FC'
+        observables = {observable_name: (FC(), ConcatenatingAccumulator(), KolmogorovSmirnovStatistic())}
+    elif args.observable == 'phFCD':
+        observable_name = 'phFCD'
+        observables = {observable_name: (PhFCD(), ConcatenatingAccumulator(), KolmogorovSmirnovStatistic())}
+    elif args.observable == 'swFCD':
+        observable_name = 'swFCD'
+        observables = {observable_name: (SwFCD(), ConcatenatingAccumulator(), KolmogorovSmirnovStatistic())}
+    else:
+        RuntimeError(f"Observable <{args.observable}> not supported!")
 
     all_fMRI = {s: d for s, d in enumerate(timeseries)}
 
+    out_file_path = os.path.join(args.out_path, f"{args.model}_{observable_name}")
+    if not os.path.exists(out_file_path):
+        os.makedirs(out_file_path)
+
     # Process (or load) empirical data
-    emp_filename = os.path.join(args.out_path, 'fNeuro_emp.mat')
+    emp_filename = os.path.join(out_file_path, 'fNeuro_emp.mat')
     if not os.path.exists(emp_filename):
         bpf_emp = BandPassFilter(k=2, flp=0.01, fhi=0.09, tr=tr, apply_detrend=True, apply_demean=True)
         processed = process_empirical_subjects(all_fMRI, observables, bpf_emp)
@@ -374,65 +390,69 @@ def run():
     else:
         processed = {observable_name: load_2d_matrix(emp_filename, index=observable_name)}
 
-    # -------------------------- Preprocessing pipeline!!!
-    gs = np.arange(g_Start, g_End + g_Step, g_Step)
-    out_file_name_pattern = os.path.join(args.out_path, 'fitting_g{}.mat')
+    out_file_name_pattern = os.path.join(out_file_path, 'fitting_g{}.mat')
 
+    if args.g is not None:
+        # Single point execution for debugging purposes
+        compute_g({
+            'verbose':True,
+            'model': copy.deepcopy(model),
+            'integrator': copy.deepcopy(integrator),
+            'weights': sc_norm,
+            'processed': processed,
+            'tr': tr,
+            'observables': copy.deepcopy(observables),
+            'obs_var': obs_var,
+            'bold': bold,
+            'bold_model': BoldStephan2008(),
+            'out_file_name_pattern': out_file_name_pattern,
+            'num_subjects': n_subj,
+            't_max_neuronal': t_max_neuronal,
+            't_warmup': t_warmup,
+            'sampling_period': sampling_period
+        }, args.g)
+    elif args.g_range is not None:
+        [g_Start, g_End, g_Step] = args.g_range
+        gs = np.arange(g_Start, g_End + g_Step, g_Step)
 
-    # Single point execution for debugging purposes
-    # compute_g({
-    #     'verbose':True,
-    #     'model': copy.deepcopy(model),
-    #     'integrator': copy.deepcopy(integrator),
-    #     'weights': sc_norm,
-    #     'processed': processed,
-    #     'tr': tr,
-    #     'observables': copy.deepcopy(observables),
-    #     'obs_var': obs_var,
-    #     'bold': bold,
-    #     'out_file_name_pattern': out_file_name_pattern,
-    #     'num_subjects': n_subj,
-    #     't_max_neuronal': t_max_neuronal,
-    #     't_warmup': t_warmup,
-    #     'sampling_period': sampling_period
-    # }, 2.15)
-    # exit(0)
+        # We use parallel processing to compute all the simulations
+        pool = ProcessPool(nodes=args.nproc)
+        rn = list(range(len(gs)))
+        # Not entirely sure that the deepcopy() function is needed, but I use it when the object is going to be accessed
+        # in read-write mode.
+        ee = [{
+            'verbose': True,
+            'i': i,
+            'model': copy.deepcopy(model),
+            'integrator': copy.deepcopy(integrator),
+            'weights': sc_norm,
+            'processed': processed,
+            'tr': tr,
+            'observables': copy.deepcopy(observables),
+            'obs_var': obs_var,
+            'bold': bold,
+            'bold_model': BoldStephan2008(),
+            'out_file_name_pattern': out_file_name_pattern,
+            'num_subjects': n_subj,
+            't_max_neuronal': t_max_neuronal,
+            't_warmup': t_warmup,
+            'sampling_period': sampling_period
+        } for i, _ in enumerate(rn)]
 
-    # We use parallel processing to compute all the simulations
-    pool = ProcessPool(nodes=args.nproc)
-    rn = list(range(len(gs)))
-    # Not entirely sure that the deepcopy() function is needed, but I use it when the object is going to be accessed
-    # in read-write mode.
-    ee = [{
-        'verbose': True,
-        'i': i,
-        'model': copy.deepcopy(model),
-        'integrator': copy.deepcopy(integrator),
-        'weights': sc_norm,
-        'processed': processed,
-        'tr': tr,
-        'observables': copy.deepcopy(observables),
-        'obs_var': obs_var,
-        'bold': bold,
-        'out_file_name_pattern': out_file_name_pattern,
-        'num_subjects': n_subj,
-        't_max_neuronal': t_max_neuronal,
-        't_warmup': t_warmup,
-        'sampling_period': sampling_period
-    } for i, _ in enumerate(rn)]
+        results = pool.map(compute_g, ee, gs)
+        fig, ax = plt.subplots()
+        rs = sorted(results, key=lambda r: r['g'])
+        g = [r['g'] for r in rs]
+        data = [r[observable_name] for r in rs]
 
-    results = pool.map(compute_g, ee, gs)
-    fig, ax = plt.subplots()
-    rs = sorted(results, key=lambda r: r['g'])
-    g = [r['g'] for r in rs]
-    data = [r[observable_name] for r in rs]
+        ax.plot(g, data)
 
-    ax.plot(g, data)
+        ax.set(xlabel=f'G (global coupling) for model {args.model}', ylabel=observable_name,
+               title='Global coupling fitting')
 
-    ax.set(xlabel=f'G (global coupling) for model {args.model}', ylabel=observable_name,
-           title='Global coupling fitting')
-
-    plt.show()
+        plt.show()
+    else:
+        RuntimeError("Neither --g not --g-range has been defined")
 
 if __name__ == '__main__':
     run()
