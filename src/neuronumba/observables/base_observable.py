@@ -5,7 +5,7 @@ class Observable(HasAttr):
     """
     Abstract class for Observables. Each implementation has to define "_compute" method.
     Inputs are passed as attributes to each observable implementation.
-    Returns a dictionary with the results or None on error. 
+    Returns a dictionary with the results or None on error.
     """
 
     def compute(self):
@@ -41,6 +41,9 @@ class ObservableFMRI(Observable):
     def _compute(self):
         if self.bold_signal is None or not (isinstance(self.bold_signal, np.ndarray) and self.bold_signal.ndim == 2):
             raise TypeError("Invalid bold signal.")
+        if not self.ignore_nans and np.isnan(self.bold_signal).any():
+            # TODO: Maybe we should raise an error?
+            return np.nan
         return self._compute_from_fmri(self.bold_signal)
     
     def from_surrogate(self, bold_signal):
