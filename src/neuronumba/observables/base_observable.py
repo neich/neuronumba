@@ -3,9 +3,9 @@ from neuronumba.basic.attr import HasAttr, Attr
 
 class Observable(HasAttr):
     """
-    Abstract class for Observables. Each implementation has to
-    define "_compute" method.
+    Abstract class for Observables. Each implementation has to define "_compute" method.
     Inputs are passed as attributes to each observable implementation.
+    Returns a dictionary with the results or None on error. 
     """
 
     def compute(self):
@@ -15,8 +15,22 @@ class Observable(HasAttr):
         raise NotImplemented('Should have been implemented by subclass!')
 
 class ObservableFMRI(Observable):
-    ignore_nans = Attr(default=False)
+    """
+    This class is used to mantain backwards-compatibilty with previous implementations.
+    Now the bold_signal input parameter is stored as an attribute but still maintains the
+    "from_fmri" function entry point. 
 
+    It can be called in both styles:
+        - As a generic Observable:
+            obs = FooObsFMRI()
+            obs.bold_singal = signal
+            result = obs.compute()
+        - Backwards-compatibility:
+            obs = FooObsFMRI()
+            result = obs.from_fmri(signal)
+    """
+
+    ignore_nans = Attr(default=False)
     # bold_signal (ndarray): Bold signal with shape (n_rois, n_time_samples)
     bold_signal = Attr(default=None)
 
