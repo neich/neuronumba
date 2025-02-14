@@ -10,7 +10,7 @@ class Observable(HasAttr):
 
     def compute(self):
         return self._compute()
-    
+
     def _compute(self):
         raise NotImplemented('Should have been implemented by subclass!')
 
@@ -18,7 +18,7 @@ class ObservableFMRI(Observable):
     """
     This class is used to mantain backwards-compatibilty with previous implementations.
     Now the bold_signal input parameter is stored as an attribute but still maintains the
-    "from_fmri" function entry point. 
+    "from_fmri" function entry point.
 
     It can be called in both styles:
         - As a generic Observable:
@@ -45,7 +45,7 @@ class ObservableFMRI(Observable):
             # TODO: Maybe we should raise an error?
             return np.nan
         return self._compute_from_fmri(self.bold_signal)
-    
+
     def from_surrogate(self, bold_signal):
         n_parcells, t_max = bold_signal.shape
         for seed in range(n_parcells):

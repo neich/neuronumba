@@ -37,6 +37,7 @@ class Model(HasAttr):
         super().configure(**kwargs)
 
     def _init_dependant(self):
+        super()._init_dependant()
         self.n_rois = self.weights.shape[0]
 
     @classmethod

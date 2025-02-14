@@ -58,7 +58,7 @@ class KolmogorovSmirnovStatistic(DistMeasure):
 # Pearson correlation takes a value from −1 (perfect negative correlation) to +1 (perfect positive correlation)
 # with the value of zero being no correlation between X and Y.
 # (from https://www.sciencedirect.com/science/article/abs/pii/B9780128147610000046)
-class pearsonSimilarity(DistMeasure):
+class PearsonSimilarity(DistMeasure):
     def name(self):
         return "PearsonSimilarity"
 
@@ -90,7 +90,7 @@ class pearsonSimilarity(DistMeasure):
         return np.max(arrayValues), np.argmax(arrayValues)
 
 
-class pearsonDissimilarity(pearsonSimilarity):
+class PearsonDissimilarity(PearsonSimilarity):
     def name(self):
         return "PearsonDissimilarity"
 

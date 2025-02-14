@@ -35,7 +35,7 @@ if __name__ == '__main__':
 
     # -------------------------- Load SC matrix
     mat0 = load_2d_matrix(args.sc_matrix, index=args.sc_index)
-    sc_norm = args.sc_scaling * mat0 / mat0.max()
+    sc_norm = args.g * args.sc_scaling * mat0 / mat0.max()
 
     dt = 0.1
     if args.model == 'Deco2014':
@@ -76,7 +76,7 @@ if __name__ == '__main__':
     b = BoldStephan2008(tr=args.tr)
     signal = b.compute_bold(data, monitor.period)
     fig, axs = plt.subplots(2)
-    fig.suptitle(f'Result for model {args.model}')
+    fig.suptitle(f'Result for model {args.model} (g={args.g})')
     axs[0].plot(np.arange(data.shape[0]), data)
     axs[1].plot(np.arange(signal.shape[0]), signal)
     plt.show()
