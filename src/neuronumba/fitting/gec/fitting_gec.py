@@ -11,6 +11,8 @@
 # =======================================================================
 # Import necessary packages
 from email.policy import default
+import warnings
+import time
 
 import numpy as np
 from scipy import signal
@@ -136,9 +138,64 @@ class FitGEC(HasAttr):
     last_run_convergence_err = None
     last_run_convergence_err_cov = None
     last_run_convergence_err_FC = None
+    last_run_compute_time_sec = 0
+
+    def last_run_debug_printing(self):
+        """
+        Helper function to nicely print debug on terminal last computation information.
+        """
+        
+        if self.last_run_reason_of_termination == "":
+            print("Warning: to debug print first you need to run fitGEC")
+            return
+
+        print(
+        f"***************************************************************************\n"
+        f"FitGEC:\n"
+        f"  Number of iterations: {self.last_run_num_of_iters}\n"
+        f"  Termination reason: {self.last_run_reason_of_termination}\n"
+        f"  Compute time (sec): {self.last_run_compute_time_sec}"
+        )
+
+        try:
+            import plotext as plt
+
+            print(
+            f"  Convergence error plot:\n"
+            )
+
+            plt.interactive(False)
+            iterations = list(range(len(self.last_run_convergence_err)))
+            # plt.clt()  # Clear terminal
+            plt.plot(iterations, self.last_run_convergence_err, label="Error")
+            plt.plot(iterations, self.last_run_convergence_err_cov, label="Cov Error")
+            plt.plot(iterations, self.last_run_convergence_err_FC, label="FC Error")
+            plt.title(f"Convergence Error per iter")
+            plt.xlabel("Iteration")
+            plt.ylabel("Error")
+            plt.show()
+            # plot_str = plt.build()
+            # print(plot_str)
+            plt.clear_data()
+
+        except ImportError:
+            print("plotext module not installed. Please install it to visualize debug plot convergence errors.")
+        
+        print(
+        f"***************************************************************************"
+        )
 
     # --------------- fit gEC
     def fitGEC(self, timeseries, FC_emp, starting_SC, model, TR):
+        # Runtime
+        start_time = time.time()
+
+        # Perform some checks on the starting_SC.
+        # At the moment we are only checking that at least diagonal is zeros, 
+        # but more can be added
+        if not np.allclose(np.diag(starting_SC), 0):
+            warnings.warn("Not all diagonal elemnts in starting_SC are zero.")
+
         # ------- number or RoIs
         n_roi = np.shape(starting_SC)[0]
 
@@ -210,8 +267,12 @@ class FitGEC(HasAttr):
                 olderror = errornow  
             save_SC = newSC
 
-        self.reason_of_termination = f"GEC succesfully computed in {i} iterations. Reason for termination: {verbose_stop_reason}."
+        self.last_run_convergence_err = self.last_run_convergence_err[:i]
+        self.last_run_convergence_err_cov = self.last_run_convergence_err_cov[:i]
+        self.last_run_convergence_err_FC = self.last_run_convergence_err_FC[:i]
+        self.last_run_reason_of_termination = f"GEC succesfully computed in {i} iterations. Reason for termination: {verbose_stop_reason}."
         self.last_run_num_of_iters = i
+        self.last_run_compute_time_sec = time.time() - start_time
         
         return save_SC
 

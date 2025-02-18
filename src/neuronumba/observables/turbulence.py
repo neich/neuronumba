@@ -4,11 +4,11 @@ import numpy as np
 from scipy import signal
 
 from neuronumba.basic.attr import Attr
-from neuronumba.observables.base_observable import Observable
+from neuronumba.observables.base_observable import ObservableFMRI
 from neuronumba.tools import matlab_tricks
 
 
-class Turbulence(Observable):
+class Turbulence(ObservableFMRI):
     """
     Turbulence framework, from:
     Gustavo Deco, Morten L. Kringelbach, Turbulent-like Dynamics in the Human Brain,

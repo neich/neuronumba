@@ -1,12 +1,12 @@
 import numpy as np
 import numba as nb
 
-from neuronumba.observables.base_observable import Observable
+from neuronumba.observables.base_observable import ObservableFMRI
 from neuronumba.basic.attr import Attr
 from neuronumba.observables.phase_interaction_matrix import phase_interaction_matrix
 
 
-class PhFCD(Observable):
+class PhFCD(ObservableFMRI):
 
     discard_offset = Attr(default=10, required=False)
 
