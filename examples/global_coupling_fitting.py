@@ -271,11 +271,12 @@ def process_empirical_subjects(bold_signals, observables, bpf=None, verbose=True
 
     # Loop over subjects
     for pos, s in enumerate(bold_signals):
-        if verbose:
-            print('   Processing signal {}/{} Subject: {} ({}x{})'.format(pos + 1, num_subjects, s, bold_signals[s].shape[0],
-                                                                    bold_signals[s].shape[1]), flush=True)
         # BOLD signals from file have inverse shape
         signal = bold_signals[s].T  # LR_version_symm(tc[s])
+
+        if verbose:
+            print('   Processing signal {}/{} Subject: {} ({}x{})'.format(pos + 1, num_subjects, s, signal.shape[0],
+                                                                    signal.shape[1]), flush=True)
 
         if bpf is not None:
             signal = bpf.filter(signal)
