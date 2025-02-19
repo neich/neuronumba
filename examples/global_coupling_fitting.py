@@ -146,7 +146,7 @@ def simulate_single_subject(exec_env, g):
         # Some models like Hopf do not require explicit computation of BOLD signal
         # BUT, we still have to convert the signal into samples of size tr
         tr = exec_env['tr']
-        n = int(tr * 1000.0 / sampling_period)
+        n = int(tr / sampling_period)
         len = signal.shape[0]
         tmp1 = np.pad(signal, ((0, n - len % n), (0, 0)),
                                 mode='constant',
