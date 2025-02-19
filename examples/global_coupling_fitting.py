@@ -366,13 +366,13 @@ def run():
     observable_name = None
     if args.observable == 'FC':
         observable_name = 'FC'
-        observables = {observable_name: (FC(), ConcatenatingAccumulator(), KolmogorovSmirnovStatistic())}
+        observables = {observable_name: (FC(), ConcatenatingAccumulator(), KolmogorovSmirnovStatistic(), None)}
     elif args.observable == 'phFCD':
         observable_name = 'phFCD'
-        observables = {observable_name: (PhFCD(), ConcatenatingAccumulator(), KolmogorovSmirnovStatistic())}
+        observables = {observable_name: (PhFCD(), ConcatenatingAccumulator(), KolmogorovSmirnovStatistic(), None)}
     elif args.observable == 'swFCD':
         observable_name = 'swFCD'
-        observables = {observable_name: (SwFCD(), ConcatenatingAccumulator(), KolmogorovSmirnovStatistic())}
+        observables = {observable_name: (SwFCD(), ConcatenatingAccumulator(), KolmogorovSmirnovStatistic(), None)}
     else:
         RuntimeError(f"Observable <{args.observable}> not supported!")
 
@@ -405,7 +405,7 @@ def run():
             'observables': copy.deepcopy(observables),
             'obs_var': obs_var,
             'bold': bold,
-            'bold_model': BoldStephan2008(),
+            'bold_model': BoldStephan2008().configure(),
             'out_file_name_pattern': out_file_name_pattern,
             'num_subjects': n_subj,
             't_max_neuronal': t_max_neuronal,
@@ -432,7 +432,7 @@ def run():
             'observables': copy.deepcopy(observables),
             'obs_var': obs_var,
             'bold': bold,
-            'bold_model': BoldStephan2008(),
+            'bold_model': BoldStephan2008().configure(),
             'out_file_name_pattern': out_file_name_pattern,
             'num_subjects': n_subj,
             't_max_neuronal': t_max_neuronal,
