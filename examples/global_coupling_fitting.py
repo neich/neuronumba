@@ -2,13 +2,17 @@ import argparse
 import copy
 import csv
 import gc
+import itertools
 import os
 import time
+import sys
 
 import h5py
 import numpy as np
-from pathos.multiprocessing import ProcessPool
+from concurrent.futures import ProcessPoolExecutor
 import matplotlib.pyplot as plt
+from numpy.ma.core import repeat
+
 plt.ion()
 
 from neuronumba.bold import BoldStephan2008
@@ -20,8 +24,8 @@ from neuronumba.tools.filters import BandPassFilter
 from neuronumba.observables import PhFCD, FC
 
 # Local module
-from neuronumba.observables.accumulators import ConcatenatingAccumulator
-from neuronumba.observables.measures import KolmogorovSmirnovStatistic
+from neuronumba.observables.accumulators import ConcatenatingAccumulator, AveragingAccumulator
+from neuronumba.observables.measures import KolmogorovSmirnovStatistic, PearsonSimilarity
 from neuronumba.simulator.integrators.euler import EulerStochastic
 from neuronumba.simulator.models.hopf import Hopf
 from neuronumba.simulator.simulator import simulate_nodelay
@@ -217,11 +221,8 @@ def eval_one_param(exec_env, g):
 def eval_one_param_multi(exec_env, g):
     simulated_bolds = {}
     num_subjects = exec_env['num_subjects']
-    pool = ProcessPool(nodes=10)
-    nsl = list(range(num_subjects))
-    ees = [exec_env for _ in nsl]
-    gs = [g for _ in nsl]
-    results = pool.map(simulate_single_subject, ees, gs)
+    pool = ProcessPoolExecutor(5)
+    results = pool.map(eval_one_param, itertools.repeat((exec_env, g), num_subjects))
     for i, bds in enumerate(results):
         if np.isnan(bds).any() or (np.abs(bds) > np.inf).any():  # This is certainly dangerous, we can have an infinite loop... let's hope not! ;-)
             raise RuntimeError(f"Numeric error computing subject {i}/{num_subjects} for g={g}")
@@ -294,7 +295,7 @@ def run():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--nproc", help="Number of parallel processes", type=int, default=10)
-    parser.add_argument("--nsubj", help="Number of subject for the simulations", type=int, required=True)
+    parser.add_argument("--nsubj", help="Number of subject for the simulations", type=int)
     parser.add_argument("--g", help="Single point execution for a global coupling value", type=float)
     parser.add_argument("--g-range", nargs=3, help="Parameter sweep range for G (start, end, step)", type=float)
     parser.add_argument("--bpf", nargs=3, help="Band pass fiter to apply to BOLD signal (k, lp freq, hp freq)", type=float, default=[2, 0.01, 0.1])
@@ -318,10 +319,10 @@ def run():
     t_min = 10.0 * tr / 1000.0
 
     fmris = load_subjects_data(args.fmri_path)
-    n_subj = len(fmris)
+    n_frmis = len(fmris)
     n_rois, t_max = fmris[next(iter(fmris))].shape
 
-    timeseries = np.zeros((n_subj, n_rois, t_max))
+    timeseries = np.zeros((n_frmis, n_rois, t_max))
     for i, fmri in enumerate(fmris.values()):
         timeseries[i, :, :] = fmri
 
@@ -366,7 +367,7 @@ def run():
     observable_name = None
     if args.observable == 'FC':
         observable_name = 'FC'
-        observables = {observable_name: (FC(), ConcatenatingAccumulator(), KolmogorovSmirnovStatistic(), None)}
+        observables = {observable_name: (FC(), AveragingAccumulator(), PearsonSimilarity(), None)}
     elif args.observable == 'phFCD':
         observable_name = 'phFCD'
         observables = {observable_name: (PhFCD(), ConcatenatingAccumulator(), KolmogorovSmirnovStatistic(), None)}
@@ -393,6 +394,7 @@ def run():
 
     out_file_name_pattern = os.path.join(out_file_path, 'fitting_g{}.mat')
 
+    n_subj = args.nsubj if args.nsubj is not None else n_frmis
     if args.g is not None:
         # Single point execution for debugging purposes
         compute_g({
@@ -417,10 +419,7 @@ def run():
         gs = np.arange(g_Start, g_End + g_Step, g_Step)
 
         # We use parallel processing to compute all the simulations
-        pool = ProcessPool(nodes=args.nproc)
-        rn = list(range(len(gs)))
-        # Not entirely sure that the deepcopy() function is needed, but I use it when the object is going to be accessed
-        # in read-write mode.
+        pool = ProcessPoolExecutor(max_workers=args.nproc)
         ee = [{
             'verbose': True,
             'i': i,
@@ -438,9 +437,36 @@ def run():
             't_max_neuronal': t_max_neuronal,
             't_warmup': t_warmup,
             'sampling_period': sampling_period
-        } for i, _ in enumerate(rn)]
+        } for _ in gs]
 
-        results = pool.map(compute_g, ee, gs)
+        results = []
+        for g in gs:
+            exec_env = {
+                'verbose': True,
+                'i': i,
+                'model': copy.deepcopy(model),
+                'integrator': copy.deepcopy(integrator),
+                'weights': sc_norm,
+                'processed': processed,
+                'tr': tr,
+                'observables': copy.deepcopy(observables),
+                'obs_var': obs_var,
+                'bold': bold,
+                'bold_model': BoldStephan2008().configure(),
+                'out_file_name_pattern': out_file_name_pattern,
+                'num_subjects': n_subj,
+                't_max_neuronal': t_max_neuronal,
+                't_warmup': t_warmup,
+                'sampling_period': sampling_period
+            }
+            results.append(pool.submit(compute_g, exec_env, g))
+
+        done = [f.done() for f in results]
+        while any([not f.done() for f in results]):
+            time.sleep(5)
+
+        results = [r.result() for r in results]
+
         fig, ax = plt.subplots()
         rs = sorted(results, key=lambda r: r['g'])
         g = [r['g'] for r in rs]
@@ -451,10 +477,21 @@ def run():
         ax.set(xlabel=f'G (global coupling) for model {args.model}', ylabel=observable_name,
                title='Global coupling fitting')
 
-        plt.show()
+        plt.savefig(os.path.join(out_file_path, f'fitting_{args.model}_{observable_name}.png'), dpi=300)
+
     else:
         RuntimeError("Neither --g not --g-range has been defined")
 
 if __name__ == '__main__':
-    run()
+    # Change False to True if you want to run a full sweep of all combination of models and observables
+    if True:
+        models = ['Deco2014', 'Hopf', 'Montbrio']
+        observables = ['FC', 'phFCD', 'swFCD']
+        args = [sys.argv[0], '--nproc', '5', '--g-range', '1', '20', '0.2', '--tr', '720', '--tmax', '600', '--fmri-path', './Data_Raw/ebrains_popovych', '--out-path', './Data_Produced/ebrains_popovych']
+        for m, o in list(itertools.product(models, observables)):
+            sys.argv = args + ['--model', m, '--observable', o]
+            print(f'Running fitting for model {m} and observable {o}')
+            run()
+    else:
+        run()
 
