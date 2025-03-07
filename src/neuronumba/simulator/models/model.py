@@ -86,11 +86,23 @@ class Model(HasAttr):
         """
         raise NotImplementedError
 
-    def compute_linear_matrix(self, sc, sigma):
+    def get_jacobian(self, sc):
         """
-        :return:
+        :return: the jacobian matrix of the model.
         """
         raise NotImplementedError
+
+    def get_noise_matrix(self, sigma, N):
+        """
+        computes the covariance noise matrix of the model
+
+        :param sigma: the noise amplitude, format one value, type float
+
+        :return: the covariance noise matrix Qn, format (2 n_roi, 2 n_roi)
+        """
+        # =============== Build Qn
+        Qn = (sigma ** 2) * np.eye(2 * N)  # covariance matrix of the noise
+        return Qn
 
     def as_array(self, param):
         if isinstance(param, np.ndarray):

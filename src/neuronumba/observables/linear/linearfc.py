@@ -20,6 +20,24 @@ class LinearFC(Observable):
         return self.compute()
 
     def _compute(self):
+        """
+        This function computes the FC from a linearised model.
+        solves the equation for the covariances C
+                  A Cv + Cv At + Qn = 0
+
+        Parameters
+        ----------
+        A : (generative) SC, format (n_roi, n_roi)
+        Qn: noise matrix, format (n_roi, n_roi)
+
+        Returns
+        -------
+        FC : functional connectivity matrix, format (n_roi, n_roi)
+        CV : time-lagged covariance, format (n_roi, n_roi)
+        Cvth : TYPE
+            DESCRIPTION.
+        """
+
         if self.A is None or not (isinstance(self.A, np.ndarray) and self.A.ndim == 2):
             raise TypeError("Invalid attribute A")
         if self.Qn is None or not (isinstance(self.Qn, np.ndarray) and self.Qn.ndim == 2):
