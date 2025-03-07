@@ -151,25 +151,17 @@ class Hopf(Model):
 
         return Hopf_dfun
 
-    def compute_linear_matrix(self, sc, sigma):
+    def get_jacobian(self, sc):
         """
-        This function computes the linearised Hopf model.
-        solves the equation for the covariances C
-                  A Cv + Cv At + Qn = 0
+        This function computes the Jacobian of the linearised Hopf model.
 
         Parameters
         ----------
-        sc : (generative) SC, format (n_roi, n_roi)
-        sigma : ..., format one value, type float
+        sc : SC, format (n_roi, n_roi)
 
         Returns
         -------
-        FC : functional connectivity matrix, format (n_roi, n_roi)
-        CV : time-lagged covariance, format (n_roi, n_roi)
-        Cvth : TYPE
-            DESCRIPTION.
-        A : TYPE
-            DESCRIPTION.
+        A : The Jacobian Matrix, format (2n_roi, 2n_roi)
         """
         # =============== Specific Hopf computations
         N = len(sc)  # number of nodes
@@ -186,7 +178,4 @@ class Hopf(Model):
         Ayx = np.diag(wo[:, 0])
         A = np.block([[Axx, Axy], [Ayx, Ayy]])  # create Jacobian matrix
 
-        # =============== Build Qn
-        Qn = (sigma ** 2) * np.eye(2 * N)  # covariance matrix of the noise
-
-        return A, Qn
+        return A
