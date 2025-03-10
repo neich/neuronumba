@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from scipy.special import erfcinv, betainc
 from scipy.stats import pearsonr
+import control
 
 # Matlab's corr2 function. Code taken from
 # https://stackoverflow.com/questions/29481518/python-equivalent-of-matlab-corr2
@@ -103,3 +104,20 @@ def reject_outliers(data, m = 3.):
     mdev = c*np.median(d)
     s = d / (mdev if mdev else 1.)
     return array_data[s < m]
+
+# Solve the Lyapunov/Sylvester equation in continuous time
+# https://python-control.readthedocs.io/en/latest/generated/control.lyap.html
+# NOTE: That it can use several implementation. The default used 'slycot', is the more similar as the one it uses
+# matlab internally, as it is using the same underlaying library. It is also faster than linalg.
+def lyap(A, Q, C=None, E=None, method='slycot'):
+    """
+    A, Q: 2D array_like
+        Input matrices for the Lyapunov or Sylvestor equation.
+    C: 2D array_like, optional
+        If present, solve the Sylvester equation.
+    E: 2D array_like, optional
+        If present, solve the generalized Lyapunov equation.
+    method: str, optional
+        Set the method used for computing the result. Current methods are ‘slycot’ and ‘scipy’.
+    """
+    return control.lyap(A, Q, C, E, method)
