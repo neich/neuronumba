@@ -23,15 +23,6 @@ from neuronumba.observables.linear.linearfc import LinearFC
 from neuronumba.tools import filterps
 from neuronumba.simulator.models import Model
 
-def calc_H_freq(all_HC_fMRI, N, Tmax, TR, bpf):
-    baseline_ts = np.zeros((len(all_HC_fMRI), N, Tmax))
-    for n, subj in enumerate(all_HC_fMRI):
-        baseline_ts[n] = all_HC_fMRI[subj]
-
-    # -------------------------- Setup Hopf
-    f_diff = filterps.filt_pow_spetra_multiple_subjects(baseline_ts, TR, bpf)
-    return 2 * np.pi * f_diff  # omega
-
 class FitGEC(HasAttr):
     tau = Attr(default=1.0)
     g = Attr(default=1.0)
@@ -185,6 +176,16 @@ class FitGEC(HasAttr):
             for j in range(cov.shape[1]):
                 sr[i,j] = 1/np.sqrt(abs(cov[i,i]))/np.sqrt(abs(cov[j,j]))
         return sr
+
+    @staticmethod
+    def calc_H_freq(all_HC_fMRI, N, Tmax, TR, bpf, version=filterps.FiltPowSpetraVersion.v2021):
+        baseline_ts = np.zeros((len(all_HC_fMRI), Tmax, N))
+        for n, subj in enumerate(all_HC_fMRI):
+            baseline_ts[n] = all_HC_fMRI[subj]
+
+        # -------------------------- Setup Hopf
+        f_diff = filterps.filt_pow_spetra_multiple_subjects(baseline_ts, TR, bpf, version)
+        return 2 * np.pi * f_diff  # omega
 
     # --------------- fit gEC
     def fitGEC(
