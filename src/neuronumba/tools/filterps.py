@@ -11,8 +11,8 @@ from enum import Enum
 from neuronumba.tools.filters import BandPassFilter
 
 class FiltPowSpetraVersion(Enum):
-    v2021 = "v2021"
-    v2015 = "v2015"
+    v2021 = "v2021" # This is now the default one (from Irene's code)
+    v2015 = "v2015" # This was the original version implemented (from Victor Saenger code)
 
 def conv(u: np.ndarray, v: np.ndarray):  # python equivalent to matlab conv 'same' method
     # from https://stackoverflow.com/questions/38194270/matlab-convolution-same-to-numpy-convolve
