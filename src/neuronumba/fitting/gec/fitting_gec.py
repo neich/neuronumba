@@ -178,13 +178,23 @@ class FitGEC(HasAttr):
         return sr
 
     @staticmethod
-    def calc_H_freq(all_HC_fMRI, N, Tmax, TR, bpf, version=filterps.FiltPowSpetraVersion.v2021):
-        baseline_ts = np.zeros((len(all_HC_fMRI), Tmax, N))
-        for n, subj in enumerate(all_HC_fMRI):
-            baseline_ts[n] = all_HC_fMRI[subj]
+    def calc_H_freq(all_HC_fMRI, TR, bpf, version=filterps.FiltPowSpetraVersion.v2021):
+        """
+        Compute H freq for each node. 
+        
+        Parameters
+        ----------
+        all_HC_fMRI: The fMRI of the "health control" group. Can be given in a dictionaray format, 
+                     or in an array format
+        TR: Tr in milliseconds
+        bpf: BandPassFilter to apply
+        version: Version of FiltPowSpectra to use
 
-        # -------------------------- Setup Hopf
-        f_diff = filterps.filt_pow_spetra_multiple_subjects(baseline_ts, TR, bpf, version)
+        Returns
+        -------
+        The h frequencies for each node
+        """
+        f_diff = filterps.filt_pow_spetra_multiple_subjects(all_HC_fMRI, TR, bpf, version)
         return 2 * np.pi * f_diff  # omega
 
     # --------------- fit gEC

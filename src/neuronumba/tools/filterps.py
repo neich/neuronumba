@@ -9,6 +9,7 @@ import numpy as np
 from scipy import stats
 from enum import Enum
 from neuronumba.tools.filters import BandPassFilter
+from typing import Union
 
 class FiltPowSpetraVersion(Enum):
     v2021 = "v2021" # This is now the default one (from Irene's code)
@@ -91,7 +92,7 @@ def filt_pow_spetra(
     return PowSpect_filt_narrow
 
 def filt_pow_spetra_multiple_subjects(
-    signal: np.ndarray, 
+    signal: Union[np.ndarray, dict], 
     tr: float, 
     bpf: BandPassFilter,
     version: FiltPowSpetraVersion=FiltPowSpetraVersion.v2021
