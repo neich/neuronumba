@@ -13,6 +13,7 @@
 from email.policy import default
 import warnings
 import time
+from typing import Union
 
 import numpy as np
 from scipy import signal
@@ -22,6 +23,7 @@ from neuronumba.basic.attr import HasAttr, Attr
 from neuronumba.observables.linear.linearfc import LinearFC
 from neuronumba.tools import filterps
 from neuronumba.simulator.models import Model
+from neuronumba.tools.filters import BandPassFilter
 
 class FitGEC(HasAttr):
     tau = Attr(default=1.0)
@@ -178,14 +180,19 @@ class FitGEC(HasAttr):
         return sr
 
     @staticmethod
-    def calc_H_freq(all_HC_fMRI, TR, bpf, version=filterps.FiltPowSpetraVersion.v2021):
+    def calc_H_freq(
+        all_HC_fMRI: Union[np.ndarray, dict], 
+        TR: float, 
+        bpf: BandPassFilter, 
+        version: filterps.FiltPowSpetraVersion=filterps.FiltPowSpetraVersion.v2021
+    ):
         """
         Compute H freq for each node. 
         
         Parameters
         ----------
         all_HC_fMRI: The fMRI of the "health control" group. Can be given in a dictionaray format, 
-                     or in an array format
+                     or in an array format (subject, time, node)
         TR: Tr in milliseconds
         bpf: BandPassFilter to apply
         version: Version of FiltPowSpectra to use
