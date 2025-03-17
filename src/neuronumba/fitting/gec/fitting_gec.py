@@ -13,6 +13,7 @@
 from email.policy import default
 import warnings
 import time
+from typing import Union
 
 import numpy as np
 from scipy import signal
@@ -21,106 +22,8 @@ from scipy.linalg import expm
 from neuronumba.basic.attr import HasAttr, Attr
 from neuronumba.observables.linear.linearfc import LinearFC
 from neuronumba.tools import filterps
-
-# time lagged covariance without SC
-def calc_COV_emp(tss, timelag = 1):
-    """
-    wo = without SC mask
-    
-    Parameters
-    ----------
-    tss : non-perturbed timeseries, in format (n_roi, n_timesteps)
-    timelag : the number of timesteps of your timelag, default = 1
-    
-    Returns
-    -------
-    time-lagged cov matrix in format(n_roi, n_roi)
-    """
-    n_roi = tss.shape[0]
-    EC    = np.zeros((n_roi,n_roi))
-    for i in range(n_roi):
-        for j in range(n_roi):
-            correlation = signal.correlate(tss[i,:] - tss[i,:].mean(), tss[j,:] - tss[j,:].mean(), mode = 'full')
-            lags        = signal.correlation_lags(tss[i,:].shape[0], tss[j,:].shape[0], mode = 'full')
-            EC[i,j]     = correlation[lags == timelag] / tss.shape[1]
-    return EC
-
-
-def calc_H_freq(all_HC_fMRI, N, Tmax, TR, bpf):
-    baseline_ts = np.zeros((len(all_HC_fMRI), N, Tmax))
-    for n, subj in enumerate(all_HC_fMRI):
-        baseline_ts[n] = all_HC_fMRI[subj]
-
-    # -------------------------- Setup Hopf
-    f_diff = filterps.filt_pow_spetra_multiple_subjects(baseline_ts, TR, bpf)
-    return 2 * np.pi * f_diff  # omega
-
-
-def update_EC(
-    eps_fc, 
-    eps_cov, 
-    FCemp, 
-    FCsim, 
-    covemp, 
-    covsim, 
-    SC, 
-    only_positive=True,
-    maxC=0.2):
-    """
-    Parameters
-    ----------
-    eps_fc   : parameter, float
-    eps_cov  : parameter, float
-    FCemp    : empirical functional connectivity, format (n_roi, n_roi)
-    FCsim    : simulated functional connectivity, format (n_roi, n_roi)
-    covemp   : empirical effective connectivity, format (n_roi, n_roi)
-    covsim   : simulated effective connectivity, format (n_roi, n_roi)
-    SC       : structural connectivity, format (n_roi, n_roi)
-    only_positive : default = True, to keep the update of the SC in positive values
-    maxC     : Scaling of the SCnew matrix
-            
-    Returns
-    -------
-    An updated SC, format (n_roi, n_roi)
-
-    """
-    n_roi = SC.shape[0]
-                    
-    SCnew = SC + eps_fc * (FCemp - FCsim) + eps_cov * (covemp - covsim)
-    for i in range(n_roi):
-        for j in range(n_roi):
-            if SC[i,j] == 0:
-                SCnew[i,j] = 0
-    if only_positive == True:
-        SCnew[SCnew < 0] = 0
-    SCnew /= np.max(abs(SCnew))
-    SCnew *= maxC
-
-    return SCnew
-
-
-def calc_sigratio(cov):
-    """
-    The calc_sigratio function calculates the normalization factor for the 
-    time-lagged covariance matrix. This is used so that the FC, which is a 
-    covariance normalized by the standard deviations of the two parts, and the 
-    tauCOV are in the same space, dimensionless. 
-    
-    Parameters
-    ----------
-    cov : tss put through calc_EC, format (n_roi,n_roi)
-
-    Returns
-    -------
-    sigratios in format (n_roi,n_roi)
-
-    """     
-    sr = np.zeros((cov.shape))        
-    for i in range(cov.shape[0]):
-        for j in range(cov.shape[1]):
-            sr[i,j] = 1/np.sqrt(abs(cov[i,i]))/np.sqrt(abs(cov[j,j]))
-    return sr
-
+from neuronumba.simulator.models import Model
+from neuronumba.tools.filters import BandPassFilter
 
 class FitGEC(HasAttr):
     tau = Attr(default=1.0)
@@ -142,7 +45,7 @@ class FitGEC(HasAttr):
 
     def last_run_debug_printing(self):
         """
-        Helper function to nicely print debug on terminal last computation information.
+        Helper function to nicely print debug last computation information on terminal.
         """
         
         if self.last_run_reason_of_termination == "":
@@ -185,8 +88,143 @@ class FitGEC(HasAttr):
         f"***************************************************************************"
         )
 
+    # time lagged covariance without SC
+    # CAUTION! tss is in (n_roi, time) format
+    @staticmethod
+    def _calc_COV_emp(tss: np.ndarray, timelag: int = 1):
+        """
+        wo = without SC mask
+        
+        Parameters
+        ----------
+        tss : non-perturbed timeseries, in format (n_roi, n_timesteps)
+        timelag : the number of timesteps of your timelag, default = 1
+        
+        Returns
+        -------
+        time-lagged cov matrix in format(n_roi, n_roi)
+        """
+        n_roi = tss.shape[0]
+        EC    = np.zeros((n_roi,n_roi))
+        for i in range(n_roi):
+            for j in range(n_roi):
+                correlation = signal.correlate(tss[i,:] - tss[i,:].mean(), tss[j,:] - tss[j,:].mean(), mode = 'full')
+                lags        = signal.correlation_lags(tss[i,:].shape[0], tss[j,:].shape[0], mode = 'full')
+                EC[i,j]     = correlation[lags == timelag] / tss.shape[1]
+        return EC
+
+    @staticmethod
+    def _update_EC(
+        eps_fc: float, 
+        eps_cov: float, 
+        FCemp: np.ndarray, 
+        FCsim: np.ndarray, 
+        covemp: np.ndarray, 
+        covsim: np.ndarray, 
+        SC: np.ndarray, 
+        only_positive: bool = True,
+        maxC: float = 0.2):
+        """
+        Parameters
+        ----------
+        eps_fc   : parameter, float
+        eps_cov  : parameter, float
+        FCemp    : empirical functional connectivity, format (n_roi, n_roi)
+        FCsim    : simulated functional connectivity, format (n_roi, n_roi)
+        covemp   : empirical effective connectivity, format (n_roi, n_roi)
+        covsim   : simulated effective connectivity, format (n_roi, n_roi)
+        SC       : structural connectivity, format (n_roi, n_roi)
+        only_positive : default = True, to keep the update of the SC in positive values
+        maxC     : Scaling of the SCnew matrix
+                
+        Returns
+        -------
+        An updated SC, format (n_roi, n_roi)
+
+        """
+        n_roi = SC.shape[0]
+                        
+        SCnew = SC + eps_fc * (FCemp - FCsim) + eps_cov * (covemp - covsim)
+        for i in range(n_roi):
+            for j in range(n_roi):
+                if SC[i,j] == 0:
+                    SCnew[i,j] = 0
+        if only_positive == True:
+            SCnew[SCnew < 0] = 0
+        SCnew /= np.max(abs(SCnew))
+        SCnew *= maxC
+
+        return SCnew
+
+    @staticmethod
+    def _calc_sigratio(cov: np.ndarray):
+        """
+        The calc_sigratio function calculates the normalization factor for the 
+        time-lagged covariance matrix. This is used so that the FC, which is a 
+        covariance normalized by the standard deviations of the two parts, and the 
+        tauCOV are in the same space, dimensionless. 
+        
+        Parameters
+        ----------
+        cov : tss put through calc_EC, format (n_roi,n_roi)
+
+        Returns
+        -------
+        sigratios in format (n_roi,n_roi)
+
+        """     
+        sr = np.zeros((cov.shape))        
+        for i in range(cov.shape[0]):
+            for j in range(cov.shape[1]):
+                sr[i,j] = 1/np.sqrt(abs(cov[i,i]))/np.sqrt(abs(cov[j,j]))
+        return sr
+
+    @staticmethod
+    def calc_H_freq(
+        all_HC_fMRI: Union[np.ndarray, dict], 
+        tr: float, 
+        version: filterps.FiltPowSpetraVersion=filterps.FiltPowSpetraVersion.v2021
+    ):
+        """
+        Compute H freq for each node. 
+        
+        Parameters
+        ----------
+        all_HC_fMRI: The fMRI of the "health control" group. Can be given in a dictionaray format, 
+                     or in an array format (subject, time, node).
+                     NOTE: that the signals must already be filitered. 
+        tr: TR in milliseconds
+        version: Version of FiltPowSpectra to use
+
+        Returns
+        -------
+        The h frequencies for each node
+        """
+        f_diff = filterps.filt_pow_spetra_multiple_subjects(all_HC_fMRI, tr, version)
+        return 2 * np.pi * f_diff  # omega
+
     # --------------- fit gEC
-    def fitGEC(self, timeseries, FC_emp, starting_SC, model, TR):
+    def fitGEC(
+        self, 
+        timeseries: np.ndarray, 
+        FC_emp: np.ndarray, 
+        starting_SC: np.ndarray, 
+        model: Model, 
+        TR: float
+    ):
+        """
+        Parameters:
+            timeseries (matrix 2D): Empirical timeseries data in the format of: (time, regions)
+            FC_emp (matrix 2D): Empirical functional connectivity.
+            starting_SC (matrix 2D): Starting structural connectivity.
+            model: linearized model to use
+            TR (float): Repetition time in milliseconds.
+        """
+
+        # All the computations inside GEC are performed in the (regions, time) timeseries format. 
+        # So convert it before anything else:
+        timeseries = timeseries.T
+
         # Runtime
         start_time = time.time()
 
@@ -196,16 +234,16 @@ class FitGEC(HasAttr):
         if not np.allclose(np.diag(starting_SC), 0):
             warnings.warn("Not all diagonal elemnts in starting_SC are zero.")
 
-        # ------- number or RoIs
+        # number or RoIs
         n_roi = np.shape(starting_SC)[0]
 
         # We need two empirical coveriances computed from the timeseries. The non-lag for the computation of the 
         # sigratio and the Tau lagged for GEC computation. 
         COV_emp = np.cov(timeseries)
-        COV_emp_tau = calc_COV_emp(timeseries, timelag=self.tau)
+        COV_emp_tau = FitGEC._calc_COV_emp(timeseries, timelag=self.tau)
     
         # Scaling factors based on the empirical covariance matrices
-        sigrat_emp = calc_sigratio(COV_emp)
+        sigrat_emp = FitGEC._calc_sigratio(COV_emp)
 
         # Initializing SC matrix
         newSC = starting_SC
@@ -228,23 +266,24 @@ class FitGEC(HasAttr):
             #   COV_sim: simulatied covaraiance matrix
             #   COVsimtotal: total simulated covariance matrix
             #   A: the Jacobian matrix
-            A, Qn = model.compute_linear_matrix(newSC, self.sigma)
+            A = model.get_jacobian(newSC)
+            Qn = model.get_noise_matrix(self.sigma, len(newSC))
             obs = LinearFC()
             result =  obs.from_matrix(A, Qn)
             FC_sim = result['FC']
             COVsimtotal = result['CVth']
             COV_sim = result['CV']
 
-            sigrat_sim = calc_sigratio(COV_sim)  # scaling factor based on the simulated covariance matrix
-            COV_sim_tau = np.matmul(expm((self.tau * TR) * A), COVsimtotal)  # total simulated covariance at time lag Tau
+            sigrat_sim = FitGEC._calc_sigratio(COV_sim)  # scaling factor based on the simulated covariance matrix
+            COV_sim_tau = np.matmul(expm((self.tau * (TR / 1000.0)) * A), COVsimtotal)  # total simulated covariance at time lag Tau
             COV_sim_tau = COV_sim_tau[0:n_roi, 0:n_roi]  # simulated covariance at time lag Tau (nodes of interest)
 
             # adjust the arguments eps_fc and eps_cov to change the updating of the
             # weights in the gEC depending on the difference between the empirical and
             # simulated FC and time-lagged covariance
-            newSC = update_EC(eps_fc=self.eps_fc, eps_cov=self.eps_cov, FCemp=FC_emp,
-                            FCsim=FC_sim, covemp=sigrat_emp * COV_emp_tau,
-                            covsim=sigrat_sim * COV_sim_tau, SC=newSC)
+            newSC = FitGEC._update_EC(  eps_fc=self.eps_fc, eps_cov=self.eps_cov, FCemp=FC_emp,
+                                        FCsim=FC_sim, covemp=sigrat_emp * COV_emp_tau,
+                                        covsim=sigrat_sim * COV_sim_tau, SC=newSC)
 
             # Compute errors for this iteration. We saved them for debbuging and such
             self.last_run_convergence_err_FC[i] = np.mean((FC_emp - FC_sim) ** 2)
@@ -275,8 +314,3 @@ class FitGEC(HasAttr):
         self.last_run_compute_time_sec = time.time() - start_time
         
         return save_SC
-
-
-# ================================================================================================================
-# ================================================================================================================
-# ================================================================================================================EOF

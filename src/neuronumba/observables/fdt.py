@@ -30,7 +30,8 @@ class FDT(Observable):
         n_roi = np.shape(self.eff_con)[0]
         n2 = 2 * n_roi
         
-        A, Qn = self.model.compute_linear_matrix(self.eff_con, self.sigma)
+        A = self.model.get_jacobian(self.eff_con)
+        Qn = self.model.get_noise_matrix(self.sigma, len(self.eff_con))
         obs = LinearFC()
         result =  obs.from_matrix(A, Qn)
         FC_sim = result['FC']
