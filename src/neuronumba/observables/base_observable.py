@@ -14,6 +14,7 @@ class Observable(HasAttr):
     def _compute(self):
         raise NotImplemented('Should have been implemented by subclass!')
 
+
 class ObservableFMRI(Observable):
     """
     This class is used to mantain backwards-compatibilty with previous implementations.
@@ -31,7 +32,7 @@ class ObservableFMRI(Observable):
     """
 
     ignore_nans = Attr(default=False)
-    # bold_signal (ndarray): Bold signal with shape (n_rois, n_time_samples)
+    # bold_signal (ndarray): Bold signal with shape (n_time_samples, n_rois)
     bold_signal = Attr(default=None)
 
     def from_fmri(self, bold_signal):
@@ -47,10 +48,10 @@ class ObservableFMRI(Observable):
         return self._compute_from_fmri(self.bold_signal)
 
     def from_surrogate(self, bold_signal):
-        n_parcells, t_max = bold_signal.shape
+        t_max, n_parcells = bold_signal.shape
         for seed in range(n_parcells):
-            bold_signal[seed, :] = bold_signal[seed, np.random.permutation(t_max)]
-        bold_su = bold_signal[np.random.permutation(n_parcells), :]
+            bold_signal[:, seed] = bold_signal[np.random.permutation(t_max), seed]
+        bold_su = bold_signal[:, np.random.permutation(n_parcells)]
         return self.from_fmri(bold_su)
 
     def _compute_from_fmri(self, bold_signal):
