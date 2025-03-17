@@ -45,7 +45,7 @@ class FitGEC(HasAttr):
 
     def last_run_debug_printing(self):
         """
-        Helper function to nicely print debug on terminal last computation information.
+        Helper function to nicely print debug last computation information on terminal.
         """
         
         if self.last_run_reason_of_termination == "":
@@ -182,8 +182,7 @@ class FitGEC(HasAttr):
     @staticmethod
     def calc_H_freq(
         all_HC_fMRI: Union[np.ndarray, dict], 
-        TR: float, 
-        bpf: BandPassFilter, 
+        tr: float, 
         version: filterps.FiltPowSpetraVersion=filterps.FiltPowSpetraVersion.v2021
     ):
         """
@@ -192,16 +191,16 @@ class FitGEC(HasAttr):
         Parameters
         ----------
         all_HC_fMRI: The fMRI of the "health control" group. Can be given in a dictionaray format, 
-                     or in an array format (subject, time, node)
-        TR: Tr in milliseconds
-        bpf: BandPassFilter to apply
+                     or in an array format (subject, time, node).
+                     NOTE: that the signals must already be filitered. 
+        tr: TR in milliseconds
         version: Version of FiltPowSpectra to use
 
         Returns
         -------
         The h frequencies for each node
         """
-        f_diff = filterps.filt_pow_spetra_multiple_subjects(all_HC_fMRI, TR, bpf, version)
+        f_diff = filterps.filt_pow_spetra_multiple_subjects(all_HC_fMRI, tr, version)
         return 2 * np.pi * f_diff  # omega
 
     # --------------- fit gEC
@@ -235,7 +234,7 @@ class FitGEC(HasAttr):
         if not np.allclose(np.diag(starting_SC), 0):
             warnings.warn("Not all diagonal elemnts in starting_SC are zero.")
 
-        # ------- number or RoIs
+        # number or RoIs
         n_roi = np.shape(starting_SC)[0]
 
         # We need two empirical coveriances computed from the timeseries. The non-lag for the computation of the 
@@ -315,8 +314,3 @@ class FitGEC(HasAttr):
         self.last_run_compute_time_sec = time.time() - start_time
         
         return save_SC
-
-
-# ================================================================================================================
-# ================================================================================================================
-# ================================================================================================================EOF

@@ -62,41 +62,43 @@ def gaussfilt(
 
 def filt_pow_spetra(
     signal: np.ndarray, 
-    TR: float, 
-    bpf: BandPassFilter, 
+    tr: float,
     version: FiltPowSpetraVersion = FiltPowSpetraVersion.v2021
 ):
     """
-    signal: Time series of shape (time, regions)
-    TR: Repetition time
-    bpf: Bandpass filter
+    signal: Time series of shape (time, regions). NOTE: Signal must be already be filitered. 
+    tr: Repetition time
     """
     
     tmax, nNodes = signal.shape  # Updated shape to (time, regions)
     
-    # Apply bandpass filtering (signal is now time x regions)
-    ts_filt_narrow = bpf.filter(signal)
-    
     # Perform FFT along time dimension (axis=0)
     if version == FiltPowSpetraVersion.v2021:
-        pw_filt_narrow = np.abs(np.fft.fft(stats.zscore(ts_filt_narrow, axis=0), axis=0))
+        pw_filt_narrow = np.abs(np.fft.fft(stats.zscore(signal, axis=0), axis=0))
     elif version == FiltPowSpetraVersion.v2015:
-        pw_filt_narrow = np.abs(np.fft.fft(ts_filt_narrow, axis=0))
+        pw_filt_narrow = np.abs(np.fft.fft(signal, axis=0))
     else:
         raise ValueError("Unknown version parameter")
     
     # Get the power spectrum for the first half of frequencies
     # We take slices up to tmax/2 from the first dimension (time)
-    PowSpect_filt_narrow = pw_filt_narrow[0:int(np.floor(tmax / 2)), :] ** 2 / (tmax / (TR / 1000.0))
+    PowSpect_filt_narrow = pw_filt_narrow[0:int(np.floor(tmax / 2)), :] ** 2 / (tmax / (tr / 1000.0))
     
     return PowSpect_filt_narrow
 
 def filt_pow_spetra_multiple_subjects(
     signal: Union[np.ndarray, dict], 
     tr: float, 
-    bpf: BandPassFilter,
     version: FiltPowSpetraVersion=FiltPowSpetraVersion.v2021
 ):
+    """
+    signal: 
+        Time series of the subjects. Can be in dic (time, nodes) format or in array format (subject, time, nodes)
+        NOTE: Signal must be already be filitered. 
+    tr: Repetition time
+    version: Which version to use
+    """
+
     signal_array = None
 
     if type(signal) is dict:
@@ -122,7 +124,7 @@ def filt_pow_spetra_multiple_subjects(
         f_diff_sub = np.zeros((n_subjects, n_nodes))
 
         for s in range(n_subjects):
-            PowSpect_filt_narrow[s] = filt_pow_spetra(signal_array[s, :, :], tr, bpf, version)
+            PowSpect_filt_narrow[s] = filt_pow_spetra(signal_array[s, :, :], tr, version)
             pow_areas = []
             for node in range(n_nodes):
                 pow_areas.append(gaussfilt(freqs, PowSpect_filt_narrow[s][:, node], 0.005))
