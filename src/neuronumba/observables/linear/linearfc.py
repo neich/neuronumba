@@ -3,15 +3,12 @@ from scipy import linalg
 
 from neuronumba.basic.attr import HasAttr, Attr
 from neuronumba.observables.base_observable import Observable
-from neuronumba.tools.matlab_tricks import correlation_from_covariance
-
-# Necessary if using the "slycot" versions of the solver
-# import control
-# import numpy as np
+from neuronumba.tools.matlab_tricks import correlation_from_covariance, lyap
 
 class LinearFC(Observable):
     A = Attr(default=None)
     Qn = Attr(default=None)
+    lyap_method = Attr(default='slycot') # Current methods are ‘slycot’ and ‘scipy’.
 
     def from_matrix(self, A, Qn):
         self.A = A
@@ -45,14 +42,7 @@ class LinearFC(Observable):
 
         N = int(self.A.shape[0] / 2)
         # Solves the Lyapunov equation: A*X + X*Ah = Q, with Ah the conjugate transpose of A
-        CVth = linalg.solve_continuous_lyapunov(self.A, -self.Qn)
-
-        # There are two other options to compute the solution to the equation, using the same slycot library under matlab implementation.
-        # A) Using the lyap "sylvester" version. Under the hood is calling slycot function "sb04md"
-        # Aconjtrans = np.atleast_2d(self.A).T.conj()
-        # CVth = control.lyap(self.A, Aconjtrans, self.Qn, method='slycot')
-        # B) Using the lyap "lyapunov" version. Under the hood is calling slycot function "sb03md"
-        # CVth = control.lyap(self.A, self.Qn, method='slycot')
+        CVth = lyap(self.A, self.Qn, method=self.lyap_method)
 
         # simulated FC
         FCth = correlation_from_covariance(CVth)
