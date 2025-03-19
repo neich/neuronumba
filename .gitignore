@@ -165,6 +165,6 @@ cython_debug/
 # =============================
 # Our own additions
 # =============================
-Data_Raw/
-Data_Produced/
-Results/
+**/Data_Raw/
+**/Data_Produced/
+**/Results/
