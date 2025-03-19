@@ -105,14 +105,15 @@ def reject_outliers(data, m = 3.):
     s = d / (mdev if mdev else 1.)
     return array_data[s < m]
 
+
 # Solve the Lyapunov/Sylvester equation in continuous time
 # https://python-control.readthedocs.io/en/latest/generated/control.lyap.html
 # NOTE: That it can use several implementation. The default used 'slycot', is the more similar as the one it uses
-# matlab internally, as it is using the same underlaying library. It is also faster than linalg.
+# matlab internally, as it is using the same underlying library. It is also faster than linalg.
 def lyap(A, Q, C=None, E=None, method='slycot'):
     """
     A, Q: 2D array_like
-        Input matrices for the Lyapunov or Sylvestor equation.
+        Input matrices for the Lyapunov or Sylvester equation.
     C: 2D array_like, optional
         If present, solve the Sylvester equation.
     E: 2D array_like, optional

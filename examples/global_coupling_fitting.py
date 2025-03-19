@@ -13,11 +13,12 @@ from concurrent.futures import ProcessPoolExecutor
 import matplotlib.pyplot as plt
 from numpy.ma.core import repeat
 
-plt.ion()
+# plt.ion()
 
 from neuronumba.bold import BoldStephan2008
 from neuronumba.observables.sw_fcd import SwFCD
 from neuronumba.simulator.models import Deco2014
+from neuronumba.fitting.fic.fic import FICDeco2014
 from neuronumba.simulator.models.montbrio import Montbrio
 from neuronumba.tools import filterps, hdf
 from neuronumba.tools.filters import BandPassFilter
@@ -31,32 +32,6 @@ from neuronumba.simulator.models.hopf import Hopf
 from neuronumba.simulator.simulator import simulate_nodelay
 from neuronumba.tools.loader import load_2d_matrix
 
-
-def read_matlab_h5py(filename):
-    with h5py.File(filename, "r") as f:
-        # Print all root level object names (aka keys)
-        # these can be group or dataset names
-        # print("Keys: %s" % f.keys())
-        # get first object name/key; may or may NOT be a group
-        # a_group_key = list(f.keys())[0]
-        # get the object type for a_group_key: usually group or dataset
-        # print(type(f['subjects_idxs']))
-        # If a_group_key is a dataset name,
-        # this gets the dataset values and returns as a list
-        # data = list(f[a_group_key])
-        # preferred methods to get dataset values:
-        # ds_obj = f[a_group_key]  # returns as a h5py dataset object
-        # ds_arr = f[a_group_key][()]  # returns as a numpy array
-
-        all_fMRI = {}
-        subjects = list(f['subject'])
-        for pos, subj in enumerate(subjects):
-            print(f'reading subject {pos}')
-            group = f[subj[0]]
-            dbs80ts = np.array(group['dbs80ts'])
-            all_fMRI[pos] = dbs80ts.T
-
-    return all_fMRI
 
 def load_subject_list(path):
     subjects = []
@@ -118,7 +93,6 @@ def load_sc(fmri_path, scale):
     return scale * sc / sc.max()
 
 
-
 def simulate(exec_env, g):
     model = exec_env['model']
     weights = exec_env['weights']
@@ -127,8 +101,10 @@ def simulate(exec_env, g):
     t_warmup = exec_env['t_warmup']
     integrator = exec_env['integrator']
     sampling_period = exec_env['sampling_period']
-
     model.configure(weights=weights, g=g)
+    if 'J' in exec_env:
+        model.configure(J=exec_env['J'])
+
     start_t = time.time()
     signal = simulate_nodelay(model, integrator, weights, obs_var, sampling_period, t_max_neuronal, t_warmup)
     diff_t = time.time() - start_t
@@ -200,6 +176,16 @@ def process_bold_signals(bold_signals, exec_env):
 
 
 def eval_one_param(exec_env, g):
+    if 'J_file_name_pattern' in exec_env:
+        J_file_name_pattern = exec_env['J_file_name_pattern'].format(np.round(g, decimals=2))
+        if os.path.exists(J_file_name_pattern):
+            J = hdf.loadmat(J_file_name_pattern)['J']
+        else:
+            J = FICDeco2014(model=exec_env['model'],
+                            obs_var=exec_env['obs_var'],
+                            integrator=exec_env['integrator']).compute_J(exec_env['weights'], g)
+            hdf.savemat(J_file_name_pattern, {'J': J})
+        exec_env['J'] = J
     simulated_bolds = {}
     num_subjects = exec_env['num_subjects']
     for nsub in range(num_subjects):  # trials. Originally it was 20.
@@ -210,7 +196,6 @@ def eval_one_param(exec_env, g):
         simulated_bolds[nsub] = bds
         gc.collect()
 
-    observables = exec_env['observables']
     dist = process_bold_signals(simulated_bolds, exec_env)
     # now, add {label: currValue} to the dist dictionary, so this info is in the saved file (if using the decorator @loadOrCompute)
     dist['g'] = g
@@ -218,27 +203,28 @@ def eval_one_param(exec_env, g):
     return dist
 
 
-def eval_one_param_multi(exec_env, g):
-    simulated_bolds = {}
-    num_subjects = exec_env['num_subjects']
-    pool = ProcessPoolExecutor(5)
-    results = pool.map(eval_one_param, itertools.repeat((exec_env, g), num_subjects))
-    for i, bds in enumerate(results):
-        if np.isnan(bds).any() or (np.abs(bds) > np.inf).any():  # This is certainly dangerous, we can have an infinite loop... let's hope not! ;-)
-            raise RuntimeError(f"Numeric error computing subject {i}/{num_subjects} for g={g}")
-        simulated_bolds[i] = bds
-
-    dist = process_bold_signals(simulated_bolds, exec_env)
-    # now, add {label: currValue} to the dist dictionary, so this info is in the saved file (if using the decorator @loadOrCompute)
-    dist['g'] = g
-
-    return dist
+# def eval_one_param_multi(exec_env, g):
+#     simulated_bolds = {}
+#     num_subjects = exec_env['num_subjects']
+#     pool = ProcessPoolExecutor(5)
+#     results = pool.map(eval_one_param, itertools.repeat((exec_env, g), num_subjects))
+#     for i, bds in enumerate(results):
+#         if np.isnan(bds).any() or (np.abs(bds) > np.inf).any():  # This is certainly dangerous, we can have an infinite loop... let's hope not! ;-)
+#             raise RuntimeError(f"Numeric error computing subject {i}/{num_subjects} for g={g}")
+#         simulated_bolds[i] = bds
+#
+#     dist = process_bold_signals(simulated_bolds, exec_env)
+#     # now, add {label: currValue} to the dist dictionary, so this info is in the saved file (if using the decorator @loadOrCompute)
+#     dist['g'] = g
+#
+#     return dist
 
 
 def compute_g(exec_env, g):
     result = {}
     out_file = exec_env['out_file_name_pattern'].format(np.round(g, decimals=3))
-    if os.path.exists(out_file):
+    force_recomputations = False if 'force_recomputations' not in exec_env else exec_env['force_recomputations']
+    if not force_recomputations and os.path.exists(out_file):
         print(f"Loading previous data for g={g}")
         sim_measures = hdf.loadmat(out_file)
     else:
@@ -273,7 +259,7 @@ def process_empirical_subjects(bold_signals, observables, bpf=None, verbose=True
     # Loop over subjects
     for pos, s in enumerate(bold_signals):
         # BOLD signals from file have inverse shape
-        signal = bold_signals[s].T  # LR_version_symm(tc[s])
+        signal = bold_signals[s].T  # need to be transposed for the rest of NeuroNumba...
 
         if verbose:
             print('   Processing signal {}/{} Subject: {} ({}x{})'.format(pos + 1, num_subjects, s, signal.shape[0],
@@ -412,7 +398,8 @@ def run():
             'num_subjects': n_subj,
             't_max_neuronal': t_max_neuronal,
             't_warmup': t_warmup,
-            'sampling_period': sampling_period
+            'sampling_period': sampling_period,
+            'force_recomputations': False,
         }, args.g)
     elif args.g_range is not None:
         [g_Start, g_End, g_Step] = args.g_range
@@ -435,7 +422,8 @@ def run():
             'num_subjects': n_subj,
             't_max_neuronal': t_max_neuronal,
             't_warmup': t_warmup,
-            'sampling_period': sampling_period
+            'sampling_period': sampling_period,
+            'force_recomputations': False,
         } for _ in gs]
 
         results = []
