@@ -10,7 +10,7 @@ class FC(ObservableFMRI):
     Main FC class.
 
     Args:
-        fmri (ndarray): Bold signal with shape (n_rois, n_time_samples)
+        fmri (ndarray): Bold signal with shape (n_time_samples, n_rois)
     """
 
     def _compute_from_fmri(self, fmri):
