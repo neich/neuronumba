@@ -203,23 +203,6 @@ def eval_one_param(exec_env, g):
     return dist
 
 
-# def eval_one_param_multi(exec_env, g):
-#     simulated_bolds = {}
-#     num_subjects = exec_env['num_subjects']
-#     pool = ProcessPoolExecutor(5)
-#     results = pool.map(eval_one_param, itertools.repeat((exec_env, g), num_subjects))
-#     for i, bds in enumerate(results):
-#         if np.isnan(bds).any() or (np.abs(bds) > np.inf).any():  # This is certainly dangerous, we can have an infinite loop... let's hope not! ;-)
-#             raise RuntimeError(f"Numeric error computing subject {i}/{num_subjects} for g={g}")
-#         simulated_bolds[i] = bds
-#
-#     dist = process_bold_signals(simulated_bolds, exec_env)
-#     # now, add {label: currValue} to the dist dictionary, so this info is in the saved file (if using the decorator @loadOrCompute)
-#     dist['g'] = g
-#
-#     return dist
-
-
 def compute_g(exec_env, g):
     result = {}
     out_file = exec_env['out_file_name_pattern'].format(np.round(g, decimals=3))
@@ -230,7 +213,6 @@ def compute_g(exec_env, g):
     else:
         print(f"Starting computation for g={g}")
         sim_measures = eval_one_param(exec_env, g)
-        # sim_measures = eval_one_param_multi(exec_env, g)
         hdf.savemat(out_file, sim_measures)
 
     observables = exec_env['observables']
