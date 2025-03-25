@@ -163,16 +163,14 @@ class Hopf(Model):
         -------
         A : The Jacobian Matrix, format (2n_roi, 2n_roi)
         """
-        # =============== Specific Hopf computations
+        # --------------- compute necessary information from the SC and frequencies
         N = len(sc)  # number of nodes
         wo = np.atleast_2d(self.omega).T.conj() * (2 * np.pi)  # intrinsic node frequency
-
-        # --------------- Jacobian
         s = np.sum(sc, axis=1)  # vector containing the strength of each node
         B = np.diag(s)  # create a zero matrix with "s" in the diagonal
 
-        Axx = self.a * np.eye(
-            N) - B + sc  # Axx = Ayy = diag(a-s) + sc, diagonal entries of the Jacobian matrix
+        # --------------- build the Jacobian
+        Axx = self.a * np.eye(N) - B + sc  # Axx = Ayy = diag(a-s) + sc, diagonal entries of the Jacobian matrix
         Ayy = Axx
         Axy = -np.diag(wo[:, 0])  # Axy = -Ayx = diag(w)
         Ayx = np.diag(wo[:, 0])

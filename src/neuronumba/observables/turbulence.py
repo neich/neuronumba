@@ -49,11 +49,12 @@ class Turbulence(ObservableFMRI):
         self.c_exp = c_exp
 
     def _compute_from_fmri(self, bold_signal):
-        # bold_signal (ndarray): Bold signal with shape (n_rois, n_time_samples)
-        cc = self.compute_turbulence(bold_signal)
+        # bold_signal (ndarray): Bold signal with shape (n_time_samples, n_rois)
+        cc = self.compute_turbulence(bold_signal.T)
         return cc
 
     def compute_turbulence(self, bold_signal):
+        # bold_signal (ndarray): Bold signal with shape (n_rois, n_time_samples)
         n_rois, t_max = bold_signal.shape
         # Initialization of results-storing data
         enstrophy = np.zeros((n_rois, t_max))
