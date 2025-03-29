@@ -110,8 +110,6 @@ def simulate(exec_env, g):
     diff_t = time.time() - start_t
     if exec_env['verbose']:
         print(f"Execution time: {diff_t}")
-    data_from = int(signal.shape[0] * t_warmup / (t_max_neuronal + t_warmup))
-    signal = signal[data_from:, :]
     return signal
 
 
