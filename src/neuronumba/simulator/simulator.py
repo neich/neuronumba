@@ -11,6 +11,9 @@ from neuronumba.simulator.monitors import TemporalAverage
 
 
 class Simulator(HasAttr):
+    """
+    Main simulator class
+    """
 
     connectivity = Attr(required=True)
 
@@ -63,6 +66,10 @@ class Simulator(HasAttr):
 
         _sim_loop(n_steps, init_state)
 
+
+# =====================================================================================
+# Convenience method to put all components together
+# =====================================================================================
 def simulate_nodelay(model, integrator, weights, obs_var, sampling_period, t_max_neuronal, t_warmup):
     n_rois = weights.shape[0]
     lengths = np.random.rand(n_rois, n_rois)*10.0 + 1.0
@@ -71,7 +78,7 @@ def simulate_nodelay(model, integrator, weights, obs_var, sampling_period, t_max
     history = HistoryNoDelays()
     monitor = TemporalAverage(period=sampling_period, monitor_vars=model.get_var_info([obs_var]))
     s = Simulator(connectivity=con, model=model, history=history, integrator=integrator, monitors=[monitor])
-    s.run(0, t_max_neuronal + t_warmup)
+    s.run(0, t_warmup + t_max_neuronal)
     data = monitor.data(obs_var)
     data_from = int(data.shape[0] * t_warmup / (t_max_neuronal + t_warmup))
     return data[data_from:, :]
