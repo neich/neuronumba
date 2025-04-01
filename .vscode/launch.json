@@ -1,0 +1,23 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+
+        {
+            "name": "GF range",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${workspaceFolder}/examples",
+            "program": "${workspaceFolder}/examples/global_coupling.py",
+            "console": "integratedTerminal",
+            "args": ["--tr", "720", "--model", "Montbrio", "--observable", "FC", "--g-range", "0.25", "5.0", "0.25",
+            "--out-path", "./Data_Produced/ebrains_popovych", "--tmax", "300",
+            "--nproc", "5", "--fmri-path ./Data_Raw/ebrains_popovych"],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src"
+            }
+        }
+    ]
+}
