@@ -18,6 +18,8 @@ class HFreq(Observable):
     filterps_version = Attr(default=filterps.FiltPowSpetraVersion.v2021)
 
     def _compute(self):
+        if isinstance(self.tr, int):
+            self.tr = float(self.tr)
         if not isinstance(self.tr, float):
             raise TypeError(f'Parameter "tr" must be float, got {type(self.tr).__name__}')
         if not isinstance(self.group_fmri, (np.ndarray, dict)):
