@@ -61,7 +61,7 @@ def load_subjects_data(fmri_path):
     for path in os.listdir(fmri_path):
         subject_path = os.path.join(fmri_path, path)
         if os.path.isdir(subject_path):
-            fmri_file = os.path.join(subject_path, 'rFMRI_REST1_LR_BOLD.csv')
+            fmri_file = os.path.join(subject_path, 'rfMRI_REST1_LR_BOLD.csv')
             if not os.path.isfile(fmri_file):
                 raise FileNotFoundError(f"fMRI file <{fmri_file}> not found!")
             # We want the shape of each fmri to be (n_rois, t_max)
