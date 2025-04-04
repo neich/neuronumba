@@ -53,7 +53,6 @@ if __name__ == '__main__':
     fc = FC()
 
     # For each subject, let's compute its GEC
-    # Take a cup of coffee and chill... cause it will take some time
     for subj in subj_bolds.keys():
         filtered_ts = subj_bolds[subj]
 
