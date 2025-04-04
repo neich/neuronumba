@@ -15,7 +15,7 @@ from neuronumba.basic.attr import Attr
 from neuronumba.simulator.models import Model
 from neuronumba.observables.linear.linearfc import LinearFC
 
-class FDT(Observable):
+class FdtDeco2023(Observable):
     sigma = Attr(default=0.01)
     eff_con = Attr(default=None)
     model = Attr(default=None)

@@ -21,7 +21,6 @@ from scipy.linalg import expm
 
 from neuronumba.basic.attr import HasAttr, Attr
 from neuronumba.observables.linear.linearfc import LinearFC
-from neuronumba.tools import filterps
 from neuronumba.simulator.models import Model
 from neuronumba.tools.filters import BandPassFilter
 
@@ -179,31 +178,6 @@ class FitGEC(HasAttr):
                 sr[i,j] = 1/np.sqrt(abs(cov[i,i]))/np.sqrt(abs(cov[j,j]))
         return sr
 
-    @staticmethod
-    def calc_H_freq(
-        all_HC_fMRI: Union[np.ndarray, dict], 
-        tr: float, 
-        version: filterps.FiltPowSpetraVersion=filterps.FiltPowSpetraVersion.v2021
-    ):
-        """
-        Compute H freq for each node. 
-        
-        Parameters
-        ----------
-        all_HC_fMRI: The fMRI of the "health control" group. Can be given in a dictionaray format, 
-                     or in an array format (subject, time, node).
-                     NOTE: that the signals must already be filitered. 
-        tr: TR in milliseconds
-        version: Version of FiltPowSpectra to use
-
-        Returns
-        -------
-        The h frequencies for each node
-        """
-        f_diff = filterps.filt_pow_spetra_multiple_subjects(all_HC_fMRI, tr, version)
-        return 2 * np.pi * f_diff  # omega
-
-    # --------------- fit gEC
     def fitGEC(
         self, 
         timeseries: np.ndarray, 
