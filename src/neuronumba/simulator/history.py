@@ -87,13 +87,12 @@ class HistoryNoDelays(History):
 
     def get_numba_sample(self):
         b_addr, b_shape, b_dtype = addr.get_addr(self.buffer)
-        # Uncomment this line to debug c_update()
-        # b = self.buffer
 
         # TODO: why adding the signature raises a numba warning about state_coupled being a non contiguous array?
         @nb.njit #(nb.f8[:, :](nb.intc))
         def c_sample(step: nb.intc):
-            b = nb.carray(addr.address_as_void_pointer(b_addr), b_shape, dtype=b_dtype)
+            # b = nb.carray(addr.address_as_void_pointer(b_addr), b_shape, dtype=b_dtype)
+            b = addr.create_carray(b_addr, b_shape, b_dtype)
             return b
 
         return c_sample
@@ -102,12 +101,11 @@ class HistoryNoDelays(History):
         n_cvars = self.n_cvars
         c_vars = self.c_vars
         b_addr, b_shape, b_dtype = addr.get_addr(self.buffer)
-        # Uncomment this line to debug c_update()
-        # b = self.buffer
 
         @nb.njit(nb.void(nb.intc, nb.f8[:, :]))
         def c_update(step: nb.intc, state: NDA_f8_2d):
-            b = nb.carray(addr.address_as_void_pointer(b_addr), b_shape, dtype=b_dtype)
+            # b = nb.carray(addr.address_as_void_pointer(b_addr), b_shape, dtype=b_dtype)
+            b = addr.create_carray(b_addr, b_shape, b_dtype)
             for i in range(n_cvars):
                 b[i, :] = state[c_vars[i], :]
 
