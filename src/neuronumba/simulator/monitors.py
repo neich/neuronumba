@@ -1,11 +1,11 @@
 import numpy as np
 import numba as nb
+import math
 
 from neuronumba.basic.attr import HasAttr, Attr
 from neuronumba.numba_tools import addr
 from neuronumba.numba_tools.addr import address_as_void_pointer
 from neuronumba.numba_tools.types import NDA_f8_2d
-
 
 class Monitor(HasAttr):
     dt = Attr(required=True)
@@ -140,7 +140,14 @@ class TemporalAverage(Monitor):
     def _init_dependant(self):
         super()._init_dependant()
         self.n_interim_samples = int(self.period / self.dt)
-        time_samples = 1 + int(self.t_max / self.period)
+        # Okey this give problems, I think the +1 is not ok when resto modulo is zero.
+        # Because I'm not sure I can remove it, I will put the math.ceil. If this cause problems
+        # in divisions (ex. t_max / perios) that are not exact, remove the ceil and leave just the
+        # int(self.t_max / self.perios). 
+        # The following was the line causing problems:
+        # time_samples = 1 + int(self.t_max / self.period)
+        # And this the proposal:
+        time_samples = math.ceil(self.t_max / self.period)
         if self.n_state_vars:
             self.i_buffer_state = np.zeros((self.n_interim_samples, self.n_state_vars, self.n_rois))
             self.buffer_state = np.empty((time_samples, self.n_state_vars, self.n_rois))
