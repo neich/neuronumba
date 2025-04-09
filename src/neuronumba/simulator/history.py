@@ -36,15 +36,17 @@ class HistoryDense(History):
         self.buffer = np.zeros((len(self.c_vars), self.n_time, self.n_rois))
 
     def get_numba_update(self):
-        buffer = self.buffer
+        # buffer = self.buffer
         n_cvars = self.n_cvars
         c_vars = self.c_vars
-        addr = buffer.ctypes.data
+        # addr = buffer.ctypes.data
+        b_addr, b_shape, b_dtype = addr.get_addr(self.buffer)
 
         @nb.njit(nb.void(nb.intc, nb.f8[:, :]))
         def c_update(step: nb.intc, state: NDA_f8_2d):
-            data = nb.carray(addr.address_as_void_pointer(addr), buffer.shape,
-                             dtype=buffer.dtype)
+            # data = nb.carray(addr.address_as_void_pointer(addr), buffer.shape,
+            #                  dtype=buffer.dtype)
+            data = addr.create_carray(b_addr, b_shape, b_dtype)
             for i in range(n_cvars):
                 data[i, step % self.n_time, :] = state[c_vars[i], :]
 
