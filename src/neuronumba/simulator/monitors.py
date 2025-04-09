@@ -185,21 +185,25 @@ class TemporalAverage(Monitor):
         def m_sample(step, state, observed):
             # Update interim buffer
             if n_state > 0:
-                i_bnb_state = nb.carray(address_as_void_pointer(ibs_addr), ibs_shape, dtype=ibs_dtype)
+                # i_bnb_state = nb.carray(address_as_void_pointer(ibs_addr), ibs_shape, dtype=ibs_dtype)
+                i_bnb_state = addr.create_carray(ibs_addr, ibs_shape, ibs_dtype)
                 # i_bnb_state = self.i_buffer_state
                 i_bnb_state[(step - 1) % n_interim_samples] = state[state_vars, :]
                 if step % n_interim_samples == 0:
-                    bnb_state = nb.carray(address_as_void_pointer(bs_addr), bs_shape, dtype=bs_dtype)
+                    # bnb_state = nb.carray(address_as_void_pointer(bs_addr), bs_shape, dtype=bs_dtype)
+                    bnb_state = addr.create_carray(bs_addr, bs_shape, bs_dtype)
                     # bnb_state = self.buffer_state
                     i = nb.intc(step / n_interim_samples)
                     bnb_state[i, :, :] = i_bnb_state.sum(axis=0) / ibs_shape[0]
 
             if n_obs > 0:
-                i_bnb_observed = nb.carray(address_as_void_pointer(ibo_addr), ibo_shape, dtype=ibo_dtype)
+                # i_bnb_observed = nb.carray(address_as_void_pointer(ibo_addr), ibo_shape, dtype=ibo_dtype)
+                i_bnb_observed = addr.create_carray(ibo_addr, ibo_shape, ibo_dtype)
                 # i_bnb_observed = self.i_buffer_observed
                 i_bnb_observed[(step - 1) % n_interim_samples] = observed[obs_vars, :]
                 if step % n_interim_samples == 0:
-                    bnb_observed = nb.carray(address_as_void_pointer(bo_addr), bo_shape, dtype=bo_dtype)
+                    # bnb_observed = nb.carray(address_as_void_pointer(bo_addr), bo_shape, dtype=bo_dtype)
+                    bnb_observed = addr.create_carray(bo_addr, bo_shape, bo_dtype)
                     # bnb_observed = self.buffer_observed
                     i = nb.intc(step / n_interim_samples)
                     bnb_observed[i, :, :] = i_bnb_observed.sum(axis=0) / ibo_shape[0]
