@@ -140,7 +140,6 @@ class Information_cascade(ObservableFMRI):
         for lambda_v in self.lambda_values:
             # Define and call the turbulence object
             Turbu = Information_transfer(cog_dist=self.cog_dist, lambda_val=lambda_v, ignore_nans=True)
-            Turbu.configure()
             turbuRes[lambda_v] = Turbu.from_fmri(bold_signal)
         entropys = {lambda_v: turbuRes[lambda_v]['enstrophy'] for lambda_v in self.lambda_values}
         # Calculate info cascade flow and info cascade
