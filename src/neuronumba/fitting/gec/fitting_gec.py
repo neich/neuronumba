@@ -16,10 +16,10 @@ import time
 from typing import Union
 
 import numpy as np
-from scipy import signal
 from scipy.linalg import expm
 
 from neuronumba.basic.attr import HasAttr, Attr
+from neuronumba.observables.lagged_cov import TimeLaggedCOV
 from neuronumba.observables.linear.linearfc import LinearFC
 from neuronumba.simulator.models import Model
 from neuronumba.tools.filters import BandPassFilter
@@ -87,31 +87,6 @@ class FitGEC(HasAttr):
         f"***************************************************************************"
         )
 
-    # time lagged covariance without SC
-    # CAUTION! tss is in (n_roi, time) format
-    @staticmethod
-    def _calc_COV_emp(tss: np.ndarray, timelag: int = 1):
-        """
-        wo = without SC mask
-        
-        Parameters
-        ----------
-        tss : non-perturbed timeseries, in format (n_roi, n_timesteps)
-        timelag : the number of timesteps of your timelag, default = 1
-        
-        Returns
-        -------
-        time-lagged cov matrix in format(n_roi, n_roi)
-        """
-        n_roi = tss.shape[0]
-        EC    = np.zeros((n_roi,n_roi))
-        for i in range(n_roi):
-            for j in range(n_roi):
-                correlation = signal.correlate(tss[i,:] - tss[i,:].mean(), tss[j,:] - tss[j,:].mean(), mode = 'full')
-                lags        = signal.correlation_lags(tss[i,:].shape[0], tss[j,:].shape[0], mode = 'full')
-                EC[i,j]     = correlation[lags == timelag] / tss.shape[1]
-        return EC
-
     @staticmethod
     def _update_EC(
         eps_fc: float, 
@@ -155,29 +130,6 @@ class FitGEC(HasAttr):
 
         return SCnew
 
-    @staticmethod
-    def _calc_sigratio(cov: np.ndarray):
-        """
-        The calc_sigratio function calculates the normalization factor for the 
-        time-lagged covariance matrix. This is used so that the FC, which is a 
-        covariance normalized by the standard deviations of the two parts, and the 
-        tauCOV are in the same space, dimensionless. 
-        
-        Parameters
-        ----------
-        cov : tss put through calc_EC, format (n_roi,n_roi)
-
-        Returns
-        -------
-        sigratios in format (n_roi,n_roi)
-
-        """     
-        sr = np.zeros((cov.shape))        
-        for i in range(cov.shape[0]):
-            for j in range(cov.shape[1]):
-                sr[i,j] = 1/np.sqrt(abs(cov[i,i]))/np.sqrt(abs(cov[j,j]))
-        return sr
-
     def fitGEC(
         self, 
         timeseries: np.ndarray, 
@@ -214,10 +166,12 @@ class FitGEC(HasAttr):
         # We need two empirical coveriances computed from the timeseries. The non-lag for the computation of the 
         # sigratio and the Tau lagged for GEC computation. 
         COV_emp = np.cov(timeseries)
-        COV_emp_tau = FitGEC._calc_COV_emp(timeseries, timelag=self.tau)
+        cov_emp = TimeLaggedCOV()
+        cov_emp.tau = self.tau
+        COV_emp_tau = cov_emp.from_fmri(timeseries.T)['t-l-COV']
     
         # Scaling factors based on the empirical covariance matrices
-        sigrat_emp = FitGEC._calc_sigratio(COV_emp)
+        sigrat_emp = cov_emp.calc_sigratio(COV_emp)
 
         # Initializing SC matrix
         newSC = starting_SC
@@ -248,7 +202,7 @@ class FitGEC(HasAttr):
             COVsimtotal = result['CVth']
             COV_sim = result['CV']
 
-            sigrat_sim = FitGEC._calc_sigratio(COV_sim)  # scaling factor based on the simulated covariance matrix
+            sigrat_sim = cov_emp.calc_sigratio(COV_sim)  # scaling factor based on the simulated covariance matrix
             COV_sim_tau = np.matmul(expm((self.tau * (TR / 1000.0)) * A), COVsimtotal)  # total simulated covariance at time lag Tau
             COV_sim_tau = COV_sim_tau[0:n_roi, 0:n_roi]  # simulated covariance at time lag Tau (nodes of interest)
 
