@@ -120,6 +120,7 @@ def simulate_single_subject(exec_env, g):
     if bold:
         b = exec_env['bold_model']
         bds = b.compute_bold(signal, sampling_period)
+        bds = exec_env['bold_bpf'].filter(bds)  # Remove the first 20 samples
     else:
         # Some models like Hopf do not require explicit computation of BOLD signal
         # BUT, we still have to convert the signal into samples of size tr
@@ -260,6 +261,7 @@ def process_empirical_subjects(bold_signals, observables, bpf=None, verbose=True
 def run():
     parser = argparse.ArgumentParser()
 
+    parser.add_argument("--full-scan", help="Full scan all models/observables/measures", action='store_true', default=False)
     parser.add_argument("--nproc", help="Number of parallel processes", type=int, default=10)
     parser.add_argument("--nsubj", help="Number of subject for the simulations", type=int)
     parser.add_argument("--g", help="Single point execution for a global coupling value", type=float)
@@ -267,6 +269,7 @@ def run():
     parser.add_argument("--bpf", nargs=3, help="Band pass fiter to apply to BOLD signal (k, lp freq, hp freq)", type=float, default=[2, 0.01, 0.1])
     parser.add_argument("--model", help="Model to use (Hopf, Deco2014)", type=str, default='Hopf')
     parser.add_argument("--observable", help="Observable to use (FC, phFCD, swFCD)", type=str, default='phFCD')
+    parser.add_argument("--measure", help="Measure to use (PearsonSimilarity (PS), KolmogorovStatistic (KS))", type=str, default='PS')
     parser.add_argument("--out-path", help="Path to folder for output results", type=str, required=True)
     parser.add_argument("--tr", help="Time resolution of fMRI scanner (seconds)", type=float, required=True)
     parser.add_argument("--sc-scaling", help="Scaling factor for the SC matrix", type=float, default=0.2)
@@ -323,25 +326,32 @@ def run():
         obs_var = 're'
     elif args.model == 'Montbrio':
         model = Montbrio()
-        integrator = EulerStochastic(dt=dt, sigmas=np.r_[1e-3, 0.0, 0.0, 0.0, 0.0, 0.0])
+        integrator = EulerStochastic(dt=dt, sigmas=np.r_[0.0, 0.0, 0.0, 0.0, 1e-3, 1e-3])
         bold = True
         obs_var = 'r_e'
 
     else:
         raise RuntimeError(f"Model <{args.model}> not supported!")
 
+    if args.measure == 'PS':
+        measure = PearsonSimilarity()
+    else:
+        measure = KolmogorovSmirnovStatistic()
+
     observable_name = None
     if args.observable == 'FC':
         observable_name = 'FC'
-        observables = {observable_name: (FC(), AveragingAccumulator(), PearsonSimilarity(), None)}
+        observables = {observable_name: (FC(), AveragingAccumulator(), measure, None)}
     elif args.observable == 'phFCD':
         observable_name = 'phFCD'
-        observables = {observable_name: (PhFCD(), ConcatenatingAccumulator(), KolmogorovSmirnovStatistic(), None)}
+        observables = {observable_name: (PhFCD(), ConcatenatingAccumulator(), measure, None)}
     elif args.observable == 'swFCD':
         observable_name = 'swFCD'
-        observables = {observable_name: (SwFCD(), ConcatenatingAccumulator(), KolmogorovSmirnovStatistic(), None)}
+        observables = {observable_name: (SwFCD(), ConcatenatingAccumulator(), measure, None)}
     else:
         RuntimeError(f"Observable <{args.observable}> not supported!")
+
+    bpf = BandPassFilter(tr=tr, k=args.bpf[0], flp=args.bpf[1], fhi=args.bpf[2])
 
     all_fMRI = {s: d for s, d in enumerate(timeseries)}
 
@@ -374,6 +384,7 @@ def run():
             'obs_var': obs_var,
             'bold': bold,
             'bold_model': BoldStephan2008().configure(),
+            'bold_bpf': bpf,
             'out_file_name_pattern': out_file_name_pattern,
             'num_subjects': n_subj,
             't_max_neuronal': t_max_neuronal,
@@ -384,27 +395,6 @@ def run():
     elif args.g_range is not None:
         [g_Start, g_End, g_Step] = args.g_range
         gs = np.arange(g_Start, g_End + g_Step, g_Step)
-
-        # We use parallel processing to compute all the simulations
-        ee = [{
-            'verbose': True,
-            'i': i,
-            'model': copy.deepcopy(model),
-            'integrator': copy.deepcopy(integrator),
-            'weights': sc_norm,
-            'processed': processed,
-            'tr': tr,
-            'observables': copy.deepcopy(observables),
-            'obs_var': obs_var,
-            'bold': bold,
-            'bold_model': BoldStephan2008().configure(),
-            'out_file_name_pattern': out_file_name_pattern,
-            'num_subjects': n_subj,
-            't_max_neuronal': t_max_neuronal,
-            't_warmup': t_warmup,
-            'sampling_period': sampling_period,
-            'force_recomputations': False,
-        } for _ in gs]
 
         results = []
         while len(gs) > 0:
@@ -421,6 +411,7 @@ def run():
                     'processed': processed,
                     'tr': tr,
                     'observables': copy.deepcopy(observables),
+                    'bold_bpf': bpf,
                     'obs_var': obs_var,
                     'bold': bold,
                     'bold_model': BoldStephan2008().configure(),
@@ -468,10 +459,11 @@ if __name__ == '__main__':
     if True:
         models = ['Deco2014', 'Hopf', 'Montbrio']
         observables = ['FC', 'phFCD', 'swFCD']
+        measures = ['PS', 'KS']
         args = [sys.argv[0], '--nproc', '5', '--g-range', '1', '20', '0.2', '--tr', '720', '--tmax', '600', '--fmri-path', './Data_Raw/ebrains_popovych', '--out-path', './Data_Produced/ebrains_popovych']
-        for m, o in list(itertools.product(models, observables)):
-            sys.argv = args + ['--model', m, '--observable', o]
-            print(f'Running fitting for model {m} and observable {o}')
+        for model, observable, measure in list(itertools.product(models, observables, measures)):
+            sys.argv = args + ['--model', model, '--observable', observable, '--measure', measure]
+            print(f'Running fitting for model {model}, observable {observable}, measure {measure}')
             run()
     else:
         run()
