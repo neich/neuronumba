@@ -33,7 +33,7 @@ class ObservableFMRI(Observable):
 
     ignore_nans = Attr(default=False)
     # bold_signal (ndarray): Bold signal with shape (n_time_samples, n_rois)
-    bold_signal = Attr(default=None)
+    bold_signal = Attr(default=None, required=False)
 
     def from_fmri(self, bold_signal):
         self.bold_signal = bold_signal
