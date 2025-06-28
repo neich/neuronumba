@@ -113,12 +113,12 @@ class RawSubSample(Monitor):
         def m_sample(step: nb.intc, state: NDA_f8_2d, observed: NDA_f8_2d):
             if step % n_interim_samples == 0:
                 if n_state > 0:
-                    bs = nb.carray(address_as_void_pointer(bs_addr), bs_shape, dtype=bs_dtype)
+                    bs = addr.create_carray(bs_addr, bs_shape, bs_dtype)
                     i = int(step / n_interim_samples)
                     for v in range(n_state):
                         bs[i, v, :] = state[state_vars[v], :]
                 if n_obs > 0:
-                    bo = nb.carray(address_as_void_pointer(bo_addr), bo_shape, dtype=bo_dtype)
+                    bo = addr.create_carray(bo_addr, bo_shape, dtype=bo_dtype)
                     i = int(step / n_interim_samples)
                     for v in range(n_obs):
                         bo[i, v, :] = observed[obs_vars[v], :]
@@ -140,7 +140,7 @@ class TemporalAverage(Monitor):
     def _init_dependant(self):
         super()._init_dependant()
         self.n_interim_samples = int(self.period / self.dt)
-        time_samples = 1 + int(self.t_max / self.period)
+        time_samples = int(self.t_max / self.period)
         if self.n_state_vars:
             self.i_buffer_state = np.zeros((self.n_interim_samples, self.n_state_vars, self.n_rois))
             self.buffer_state = np.empty((time_samples, self.n_state_vars, self.n_rois))
@@ -183,6 +183,9 @@ class TemporalAverage(Monitor):
 
         @nb.njit(nb.void(nb.intc, nb.f8[:, :], nb.f8[:, :]))
         def m_sample(step, state, observed):
+            # Precompute the divisor for optimization
+            inv_ibs_shape_0 = 1.0 / ibs_shape[0]
+
             # Update interim buffer
             if n_state > 0:
                 # i_bnb_state = nb.carray(address_as_void_pointer(ibs_addr), ibs_shape, dtype=ibs_dtype)
@@ -194,7 +197,7 @@ class TemporalAverage(Monitor):
                     bnb_state = addr.create_carray(bs_addr, bs_shape, bs_dtype)
                     # bnb_state = self.buffer_state
                     i = nb.intc(step / n_interim_samples)
-                    bnb_state[i, :, :] = i_bnb_state.sum(axis=0) / ibs_shape[0]
+                    bnb_state[i, :, :] = i_bnb_state.sum(axis=0) * inv_ibs_shape_0
 
             if n_obs > 0:
                 # i_bnb_observed = nb.carray(address_as_void_pointer(ibo_addr), ibo_shape, dtype=ibo_dtype)
