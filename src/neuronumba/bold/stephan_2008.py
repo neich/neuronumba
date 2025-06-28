@@ -47,7 +47,7 @@ class BoldStephan2008(Bold):
     atol = Attr(default=1e-08, required=False)
 
     def compute_bold(self, signal, dt):
-        @njit()
+        @njit
         def is_close(a, b):
             return np.absolute(a - b) <= (atol + rtol * np.absolute(b))
 
@@ -120,7 +120,8 @@ class BoldStephan2008(Bold):
                 s[1] = s[0] + dtt * (signal[n] - kappa * s[0] - gamma * (f[0] - 1))
                 # Equation (10) for f in [Stephan et al. 2007]. Now, changed to eq. A7 in [Stephan2008]
                 # Changes in blood flow f :
-                f[0] = np.clip(f[0], 1, None)
+                for i in range(N):
+                    f[0, i] = 1.0 if f[0, i] < 1.0 else f[0, i]
                 ftilde[1] = ftilde[0] + dtt * (s[0] / f[0])
                 # Equation (8)-1st for v in [Stephan et al. 2007]. Now, changed to eq. A8 in [Stephan2008]
                 # Changes in venous blood volume v:
@@ -131,7 +132,9 @@ class BoldStephan2008(Bold):
                 vtilde[1] = vtilde[0] + dtt * ((f[0] - fv) / (tau * v[n]))
                 # Equation (8)-2nd for q in [Stephan et al. 2007]. Now, changed to eq. A9 in [Stephan2008]
                 # Changes in deoxyhemoglobin content q:
-                q[n] = np.clip(q[n], 0.01, None)
+                # q[n] = np.clip(q[n], 0.01, None)
+                for i in range(N):
+                    q[0, i] = 0.01 if q[0, i] < 0.01 else q[0, i]
                 ff = (1 - (1 - Eo) ** (1 / f[0])) / Eo  # oxygen extraction
                 qtilde[1] = qtilde[0] + dtt * ((f[0] * ff - fv * q[n] / v[n]) / (tau * q[n]))
 
