@@ -1,1 +1,2 @@
 from neuronumba.bold.stephan_2008 import BoldStephan2008
+from neuronumba.bold.stephan_2007 import BoldStephan2007
