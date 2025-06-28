@@ -17,7 +17,7 @@
 # ----------------------------------------
 # ----------------------------------------
 import numpy as np
-import numba as nb
+from numba import njit
 
 from neuronumba.basic.attr import Attr
 from neuronumba.bold.base_bold import Bold
@@ -56,7 +56,7 @@ class BoldStephan2007(Bold):
 
 
     def compute_bold(self, signal, dt):
-        @nb.njit
+        @njit
         def Bold_Stephan2007_compute_bold(signal):
             n_t = signal.shape[0]
 
