@@ -134,7 +134,7 @@ class BoldStephan2008(Bold):
                 # Changes in deoxyhemoglobin content q:
                 # q[n] = np.clip(q[n], 0.01, None)
                 for i in range(N):
-                    q[0, i] = 0.01 if q[0, i] < 0.01 else q[0, i]
+                    q[n, i] = 0.01 if q[n, i] < 0.01 else q[n, i]
                 ff = (1 - (1 - Eo) ** (1 / f[0])) / Eo  # oxygen extraction
                 qtilde[1] = qtilde[0] + dtt * ((f[0] * ff - fv * q[n] / v[n]) / (tau * q[n]))
 
