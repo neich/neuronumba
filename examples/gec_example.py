@@ -3,7 +3,7 @@ import numpy as np
 
 from neuronumba.tools.filters import BandPassFilter
 from neuronumba.observables import FC, HFreq
-from neuronumba.fitting.gec import FitGEC
+from neuronumba.fitting.gec import FitGEC, linear_COV_corr_sim
 from neuronumba.simulator.models import Hopf
 from neuronumba.observables.linear.linearfc import LinearFC
 from neuronumba.tools.loader import load_2d_matrix
@@ -67,6 +67,9 @@ if __name__ == '__main__':
         fit_gec.eps_fc = 0.0004
         fit_gec.eps_cov = 0.0001
         fit_gec.convergence_test_iters = 100
+        # Initialize COV_corr simulator
+        fit_gec.simulator = linear_COV_corr_sim(tr=tr, n_roi=len(h_freq),
+                                                model=linear_hopf, sigma=fit_gec.sigma, tau=fit_gec.tau)
 
         # Before computing the GEC, we need to give it an initial seed. For example,
         # idially we would give the SC. If we don't have it, we can still seed with different
@@ -94,8 +97,8 @@ if __name__ == '__main__':
             filtered_ts,
             FC_emp,
             gec_seed,
-            linear_hopf,
-            tr
+            # linear_hopf,
+            # tr
         )
 
         # We can also print some debug information about the GEC computation. Or we can
