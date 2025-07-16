@@ -12,8 +12,8 @@ class EulerDeterministic(Integrator):
         dt = self.dt
         stimulus = np.empty((1, 1))
 
-        @nb.njit(nb.types.UniTuple(nb.f8[:, :], 2)(nb.f8[:, :], nb.f8[:, :]))
-        def scheme(state: NDA_f8_2d, coupling: NDA_f8_2d):
+        @nb.njit(nb.types.UniTuple(nb.f8[:, :], 2)(nb.f8[:, :], nb.f8[:, :]), cache=True)
+        def scheme(state, coupling):
             d_state, observed = dfun(state, coupling)
             if stimulus.shape[1] == state.shape[1]:
                 d_state = d_state + stimulus
@@ -37,8 +37,8 @@ class EulerStochastic(Integrator):
         sigmas = self.sigmas
         sqrt_dt = self._sqrt_dt
 
-        @nb.njit(nb.types.UniTuple(nb.f8[:, :], 2)(nb.f8[:, :], nb.f8[:, :]))
-        def scheme(state: NDA_f8_2d, coupling: NDA_f8_2d):
+        @nb.njit(nb.types.UniTuple(nb.f8[:, :], 2)(nb.f8[:, :], nb.f8[:, :]), cache=True)
+        def scheme(state, coupling):
             d_state, observed = dfun(state, coupling)
             if stimulus.shape[1] == state.shape[1]:
                 d_state = d_state + stimulus

@@ -109,8 +109,8 @@ class RawSubSample(Monitor):
         n_obs = nb.intc(self.n_obs_vars)
         n_interim_samples = nb.intc(self.n_interim_samples)
 
-        @nb.njit(nb.void(nb.intc, nb.f8[:, :], nb.f8[:, :]))
-        def m_sample(step: nb.intc, state: NDA_f8_2d, observed: NDA_f8_2d):
+        @nb.njit(nb.void(nb.i8, nb.f8[:, :], nb.f8[:, :]), cache=True)
+        def m_sample(step, state, observed):
             if step % n_interim_samples == 0:
                 if n_state > 0:
                     bs = addr.create_carray(bs_addr, bs_shape, bs_dtype)
@@ -188,7 +188,7 @@ class TemporalAverage(Monitor):
         n_obs = nb.intc(self.n_obs_vars)
         n_interim_samples = nb.intc(self.n_interim_samples)
 
-        @nb.njit(nb.void(nb.intc, nb.f8[:, :], nb.f8[:, :]))
+        @nb.njit(nb.void(nb.intc, nb.f8[:, :], nb.f8[:, :]), cache=True)
         def m_sample(step, state, observed):
             # Precompute the divisor for optimization
             inv_ibs_shape_0 = 1.0 / ibs_shape[0]
