@@ -73,13 +73,14 @@ if __name__ == '__main__':
     # fig, ax = plt.subplots()
     # ax.plot(np.arange(data.shape[0]), data)
     # plt.show()
-    b = BoldStephan2008(tr=args.tr)
+    b = BoldStephan2008(tr=args.tr).configure()
     signal = b.compute_bold(data, monitor.period)
     fig, axs = plt.subplots(2)
     fig.suptitle(f'Result for model {args.model} (g={args.g})')
     axs[0].plot(np.arange(data.shape[0]), data)
     axs[1].plot(np.arange(signal.shape[0]), signal)
     plt.show()
-    np.save(os.path.join(args.out_path, "bold.npy"), signal)
-
+    np.save(os.path.join(args.out_path, f"bold_{args.g:.2f}.npy"), signal)
+    hdf.savemat(os.path.join(args.out_path, f"bold_{args.g:.2f}.mat"), {'bold': signal})
+    hdf.savemat(os.path.join(args.out_path, f"raw_{args.g:.2f}.mat"), {'raw': data.T[:, :2000]})
 
