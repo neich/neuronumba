@@ -102,8 +102,9 @@ class Naskar2021(LinearCouplingModel):
         # IMPORTANT: you have to add this line here in ALL get_numba_dfun() implementations
         P = self.P
 
-        @nb.njit(nb.types.UniTuple(nb.f8[:, :], 2)(nb.f8[:, :], nb.f8[:, :]))
-        def Naskar2021_dfun(state: NDA_f8_2d, coupling: NDA_f8_2d):
+        @nb.njit(nb.types.UniTuple(nb.f8[:, :], 2)(nb.f8[:, :], nb.f8[:, :]),
+                 cache=True)
+        def Naskar2021_dfun(state, coupling):                
             Se = np.clip(state[0, :], 0.0, 1.0)
             Si = np.clip(state[1, :], 0.0, 1.0)
             J = state[2, :]
