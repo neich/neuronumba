@@ -40,7 +40,7 @@ class AttrEnum(set):
 
 class Attr(object):
 
-    def __init__(self, default=None, required=True, dependant=False, attributes=None):
+    def __init__(self, default=None, required=True, dependant=False, attributes=None, doc=None):
         if attributes is None:
             self.attributes = []
         else:
@@ -53,6 +53,7 @@ class Attr(object):
         self.default = default
         self.required = bool(required)
         self.dependant = dependant
+        self.doc = doc
 
 
 class HasAttr(object):
