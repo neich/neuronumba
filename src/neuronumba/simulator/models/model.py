@@ -18,7 +18,7 @@ class ParameterEnum(object):
 
 
 class Model(HasAttr):
-    Type = AttrEnum(['Model'])
+    Type = AttrEnum(['Model', 'ModelAux'])
 
     weights = Attr(required=True)
     n_rois = Attr(dependant=True)
@@ -27,14 +27,19 @@ class Model(HasAttr):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         cls = type(self)
-        setattr(cls, 'P', cls._build_parameter_enum())
+        p, p_aux = cls._build_parameter_enum()
+        setattr(cls, 'P', p)
+        setattr(cls, 'P_aux', p_aux)
 
     def configure(self, **kwargs):
         # Kind of a hack to avoid dynamic class variables not being copied when using multiprocessing on Windows
         if os.name == "nt":
             cls = type(self)
-            setattr(cls, 'P', cls._build_parameter_enum())
+            p, p_aux = cls._build_parameter_enum()
+            setattr(cls, 'P', p)
+            setattr(cls, 'P_aux', P_aux)
         super().configure(**kwargs)
+        return self
 
     def _init_dependant(self):
         super()._init_dependant()
@@ -47,8 +52,10 @@ class Model(HasAttr):
     @classmethod
     def _build_parameter_enum(cls):
         attrs = [name for name, value in cls._get_attributes().items() if Model.Type.Model in value.attributes]
+        attrs_aux = [name for name, value in cls._get_attributes().items() if Model.Type.ModelAux in value.attributes]
         p = IntEnum('P', {k: i for i, k in enumerate(attrs)})
-        return p
+        p_aux = IntEnum('P_aux', {k: i for i, k in enumerate(attrs_aux)})
+        return p, p_aux
 
     def get_var_info(self, v_list: list[str] = None):
         v_list = v_list or []
@@ -112,10 +119,16 @@ class Model(HasAttr):
 
     def _init_dependant_automatic(self):
         self.m = np.empty((len(self.P), self.n_rois))
+        self.m_aux = nb.typed.Dict.empty(key_type=nb.types.int64, value_type=nb.types.float64[:])
         for p in list(self.P):
             name = p.name
             index = p.value
             self.m[index] = self.as_array(getattr(self, name))
+        for p in list(self.P_aux):
+            name = p.name
+            index = p.value
+            self.m_aux[index] = getattr(self, name)
+
 
 
 class LinearCouplingModel(Model):
@@ -140,7 +153,7 @@ class LinearCouplingModel(Model):
         wtg = self.g * self.weights_t.copy()
 
         # TODO: why adding the signature raises a numba warning about state_coupled being a non contiguous array?
-        @nb.njit #(nb.f8[:, :](nb.f8[:, :], nb.f8[:, :]))
+        @nb.njit(nb.f8[:, :](nb.f8[:, :]), cache=True)
         def linear_coupling(state):
             """
 
