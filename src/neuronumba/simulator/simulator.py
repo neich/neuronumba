@@ -54,8 +54,8 @@ class Simulator(HasAttr):
 
         h_update(0, init_state)
 
-        @nb.njit(nb.void(nb.intc, nb.f8[:, :]))
-        def _sim_loop(n_steps: nb.intc, state: NDA_f8_2d):
+        @nb.njit(nb.void(nb.i8, nb.f8[:, :]), cache=True)
+        def _sim_loop(n_steps, state):
             for step in range(1, n_steps + 1):
                 previous_state_coupled = h_sample(step)
                 cpl = m_couple(previous_state_coupled)

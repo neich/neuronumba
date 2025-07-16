@@ -13,13 +13,14 @@ from concurrent.futures import ProcessPoolExecutor
 import matplotlib.pyplot as plt
 from numpy.ma.core import repeat
 
-# plt.ion()
+import numba
+# Disable JIT compilation for debugging purposes
+# numba.config.DISABLE_JIT = True  
 
 from neuronumba.bold import BoldStephan2008
 from neuronumba.observables.sw_fcd import SwFCD
-from neuronumba.simulator.models import Deco2014
+from neuronumba.simulator.models import Deco2014, ZerlautAdaptationFirstOrder, ZerlautAdaptationSecondOrder, Hopf, Montbrio
 from neuronumba.fitting.fic.fic import FICDeco2014
-from neuronumba.simulator.models.montbrio import Montbrio
 from neuronumba.tools import filterps, hdf
 from neuronumba.tools.filters import BandPassFilter
 from neuronumba.observables import PhFCD, FC
@@ -28,7 +29,6 @@ from neuronumba.observables import PhFCD, FC
 from neuronumba.observables.accumulators import ConcatenatingAccumulator, AveragingAccumulator
 from neuronumba.observables.measures import KolmogorovSmirnovStatistic, PearsonSimilarity
 from neuronumba.simulator.integrators.euler import EulerStochastic
-from neuronumba.simulator.models.hopf import Hopf
 from neuronumba.simulator.simulator import simulate_nodelay
 from neuronumba.tools.loader import load_2d_matrix
 
@@ -203,25 +203,27 @@ def eval_one_param(exec_env, g):
 
 
 def compute_g(exec_env, g):
-    result = {}
     out_file = exec_env['out_file_name_pattern'].format(np.round(g, decimals=3))
     force_recomputations = False if 'force_recomputations' not in exec_env else exec_env['force_recomputations']
+
+    observables = exec_env['observables']
+    processed = exec_env['processed']
+
     if not force_recomputations and os.path.exists(out_file):
         print(f"Loading previous data for g={g}")
         sim_measures = hdf.loadmat(out_file)
     else:
         print(f"Starting computation for g={g}")
         sim_measures = eval_one_param(exec_env, g)
+        sim_measures['g'] = g  # Add the g value to the result
+        for ds in observables:
+            sim_measures[f'dist_{ds}'] = observables[ds][2].distance(sim_measures[ds], processed[ds])
         hdf.savemat(out_file, sim_measures)
 
-    observables = exec_env['observables']
-    processed = exec_env['processed']
     for ds in observables:
-        result[ds] = observables[ds][2].distance(sim_measures[ds], processed[ds])
-        print(f" {ds} for g={g}: {result[ds]};", end='', flush=True)
+        print(f" {ds} for g={g}: {sim_measures[f'dist_{ds}']};", end='', flush=True)
 
-    result['g'] = g
-    return result
+    return sim_measures
 
 
 def process_empirical_subjects(bold_signals, observables, bpf=None, verbose=True):
@@ -258,25 +260,7 @@ def process_empirical_subjects(bold_signals, observables, bpf=None, verbose=True
     return measureValues
 
 
-def run():
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument("--full-scan", help="Full scan all models/observables/measures", action='store_true', default=False)
-    parser.add_argument("--nproc", help="Number of parallel processes", type=int, default=10)
-    parser.add_argument("--nsubj", help="Number of subject for the simulations", type=int)
-    parser.add_argument("--g", help="Single point execution for a global coupling value", type=float)
-    parser.add_argument("--g-range", nargs=3, help="Parameter sweep range for G (start, end, step)", type=float)
-    parser.add_argument("--bpf", nargs=3, help="Band pass fiter to apply to BOLD signal (k, lp freq, hp freq)", type=float, default=[2, 0.01, 0.1])
-    parser.add_argument("--model", help="Model to use (Hopf, Deco2014)", type=str, default='Hopf')
-    parser.add_argument("--observable", help="Observable to use (FC, phFCD, swFCD)", type=str, default='phFCD')
-    parser.add_argument("--measure", help="Measure to use (PearsonSimilarity (PS), KolmogorovStatistic (KS))", type=str, default='PS')
-    parser.add_argument("--out-path", help="Path to folder for output results", type=str, required=True)
-    parser.add_argument("--tr", help="Time resolution of fMRI scanner (seconds)", type=float, required=True)
-    parser.add_argument("--sc-scaling", help="Scaling factor for the SC matrix", type=float, default=0.2)
-    parser.add_argument("--tmax", help="Override simulation time (seconds)", type=float, required=False)
-    parser.add_argument("--fmri-path", help="Path to fMRI timeseries data", type=str, required=True)
-
-    args = parser.parse_args()  # for example, for a single test, use --ge-range 1.0 10.0 1.0
+def run(args):
 
     # This is the data related to the dataset that we are going to load.
     # For your dataset, you need to figure these values
@@ -329,7 +313,11 @@ def run():
         integrator = EulerStochastic(dt=dt, sigmas=np.r_[0.0, 0.0, 0.0, 0.0, 1e-3, 1e-3])
         bold = True
         obs_var = 'r_e'
-
+    elif args.model == 'Zerlaut2O':
+        model = ZerlautAdaptationSecondOrder()
+        integrator = EulerStochastic(dt=dt, sigmas=np.r_[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1e-3])
+        bold = True
+        obs_var = 'E'
     else:
         raise RuntimeError(f"Model <{args.model}> not supported!")
 
@@ -338,24 +326,22 @@ def run():
     else:
         measure = KolmogorovSmirnovStatistic()
 
-    observable_name = None
-    if args.observable == 'FC':
-        observable_name = 'FC'
-        observables = {observable_name: (FC(), AveragingAccumulator(), measure, None)}
-    elif args.observable == 'phFCD':
-        observable_name = 'phFCD'
-        observables = {observable_name: (PhFCD(), ConcatenatingAccumulator(), measure, None)}
-    elif args.observable == 'swFCD':
-        observable_name = 'swFCD'
-        observables = {observable_name: (SwFCD(), ConcatenatingAccumulator(), measure, None)}
-    else:
-        RuntimeError(f"Observable <{args.observable}> not supported!")
+    observables = {}
+    for observable_name in args.observables:
+        if observable_name == 'FC':
+            observables.update({observable_name: (FC(), AveragingAccumulator(), measure, None)})
+        elif observable_name == 'phFCD':
+            observables.update({observable_name: (PhFCD(), ConcatenatingAccumulator(), measure, None)})
+        elif observable_name == 'swFCD':
+            observables.update({observable_name: (SwFCD(), ConcatenatingAccumulator(), measure, None)})
+        else:
+            RuntimeError(f"Observable <{observable_name}> not supported!")
 
     bpf = BandPassFilter(tr=tr, k=args.bpf[0], flp=args.bpf[1], fhi=args.bpf[2])
 
     all_fMRI = {s: d for s, d in enumerate(timeseries)}
 
-    out_file_path = os.path.join(args.out_path, f"{args.model}_{observable_name}")
+    out_file_path = args.out_path
     if not os.path.exists(out_file_path):
         os.makedirs(out_file_path)
 
@@ -398,6 +384,7 @@ def run():
 
         results = []
         while len(gs) > 0:
+            print(f'Creating process pool with {args.nproc} workers')
             pool = ProcessPoolExecutor(max_workers=args.nproc)
             futures = []
             print(f"EXECUTOR --- START cycle for {len(gs)} gs")
@@ -439,25 +426,42 @@ def run():
 
             pool.shutdown(wait=False,cancel_futures=True)
 
-        fig, ax = plt.subplots()
-        rs = sorted(results, key=lambda r: r['g'])
-        g = [r['g'] for r in rs]
-        data = [r[observable_name] for r in rs]
+        # fig, ax = plt.subplots()
+        # rs = sorted(results, key=lambda r: r['g'])
+        # g = [r['g'] for r in rs]
+        # data = [r[observable_name] for r in rs]
 
-        ax.plot(g, data)
+        # ax.plot(g, data)
 
-        ax.set(xlabel=f'G (global coupling) for model {args.model}', ylabel=observable_name,
-               title='Global coupling fitting')
+        # ax.set(xlabel=f'G (global coupling) for model {args.model}', ylabel=observable_name,
+        #        title='Global coupling fitting')
 
-        plt.savefig(os.path.join(out_file_path, f'fitting_{args.model}_{observable_name}.png'), dpi=300)
+        # plt.savefig(os.path.join(out_file_path, f'fitting_{args.model}_{observable_name}.png'), dpi=300)
 
     else:
         RuntimeError("Neither --g not --g-range has been defined")
 
 if __name__ == '__main__':
-    # Change False to True if you want to run a full sweep of all combination of models and observables
-    if True:
-        models = ['Deco2014', 'Hopf', 'Montbrio']
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("--full-scan", help="Full scan all models/observables/measures", action='store_true', default=False)
+    parser.add_argument("--nproc", help="Number of parallel processes", type=int, default=10)
+    parser.add_argument("--nsubj", help="Number of subject for the simulations", type=int)
+    parser.add_argument("--g", help="Single point execution for a global coupling value", type=float)
+    parser.add_argument("--g-range", nargs=3, help="Parameter sweep range for G (start, end, step)", type=float)
+    parser.add_argument("--bpf", nargs=3, help="Band pass fiter to apply to BOLD signal (k, lp freq, hp freq)", type=float, default=[2, 0.01, 0.1])
+    parser.add_argument("--model", help="Model to use (Hopf, Deco2014, Montbrio, Zerlaut1O, Zerlaut2O)", type=str, default='Deco2014')
+    parser.add_argument("--observables", help="Observables to use (FC, phFCD, swFCD)", nargs='+',type=str, required=True)
+    parser.add_argument("--measure", help="Measure to use (PearsonSimilarity (PS), KolmogorovStatistic (KS))", type=str, default='PS')
+    parser.add_argument("--out-path", help="Path to folder for output results", type=str, required=True)
+    parser.add_argument("--tr", help="Time resolution of fMRI scanner (seconds)", type=float, required=True)
+    parser.add_argument("--sc-scaling", help="Scaling factor for the SC matrix", type=float, default=0.2)
+    parser.add_argument("--tmax", help="Override simulation time (seconds)", type=float, required=False)
+    parser.add_argument("--fmri-path", help="Path to fMRI timeseries data", type=str, required=True)
+
+    args = parser.parse_args()  # for example, for a single test, use --ge-range 1.0 10.0 1.0
+    if args.full_scan:
+        models = ['Deco2014', 'Hopf', 'Montbrio', 'Zerlaut2O']
         observables = ['FC', 'phFCD', 'swFCD']
         measures = ['PS', 'KS']
         args = [sys.argv[0], '--nproc', '5', '--g-range', '1', '20', '0.2', '--tr', '720', '--tmax', '600', '--fmri-path', './Data_Raw/ebrains_popovych', '--out-path', './Data_Produced/ebrains_popovych']
@@ -466,5 +470,5 @@ if __name__ == '__main__':
             print(f'Running fitting for model {model}, observable {observable}, measure {measure}')
             run()
     else:
-        run()
+        run(args)
 

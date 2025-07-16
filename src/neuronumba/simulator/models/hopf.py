@@ -101,8 +101,8 @@ class Hopf(Model):
         g = self.g
 
         # TODO: why adding the signature raises a numba warning about state_coupled being a non contiguous array?
-        @nb.njit #(nb.f8[:, :](nb.f8[:, :]))
-        def hopf_coupling(state: NDA_f8_2d):
+        @nb.njit(nb.f8[:, :](nb.f8[:, :]), cache=True)
+        def hopf_coupling(state):
             r = np.dot(state, wt)
             return g * (r - ink * state)
 
@@ -112,8 +112,9 @@ class Hopf(Model):
         m = self.m.copy()
         P = self.P
 
-        @nb.njit(nb.types.UniTuple(nb.f8[:, :], 2)(nb.f8[:, :], nb.f8[:, :]))
-        def Hopf_dfun(state: NDA_f8_2d, coupling: NDA_f8_2d):
+        @nb.njit(nb.types.UniTuple(nb.f8[:, :], 2)(nb.f8[:, :], nb.f8[:, :]),
+                 cache=True)
+        def Hopf_dfun(state, coupling):
             x = state[0, :]
             y = state[1, :]
 

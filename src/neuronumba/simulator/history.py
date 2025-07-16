@@ -42,8 +42,8 @@ class HistoryDense(History):
         # addr = buffer.ctypes.data
         b_addr, b_shape, b_dtype = addr.get_addr(self.buffer)
 
-        @nb.njit(nb.void(nb.intc, nb.f8[:, :]))
-        def c_update(step: nb.intc, state: NDA_f8_2d):
+        @nb.njit((nb.void)(nb.int, nb.f8[:,:]), cache=True)
+        def c_update(step: nb.int, state: NDA_f8_2d):
             # data = nb.carray(addr.address_as_void_pointer(addr), buffer.shape,
             #                  dtype=buffer.dtype)
             data = addr.create_carray(b_addr, b_shape, b_dtype)
@@ -62,7 +62,7 @@ class HistoryDense(History):
         n_rois = self.n_rois
         g = self.g
 
-        @nb.njit(nb.f8[:, :](nb.intc))
+        @nb.njit((nb.f8[:,:])(nb.int), cache=True)
         def h_sample(step):
             time_idx = (step - 1 - i_delays + n_time) % n_time
             result = np.empty((n_cvars, n_rois))
@@ -91,8 +91,8 @@ class HistoryNoDelays(History):
         b_addr, b_shape, b_dtype = addr.get_addr(self.buffer)
 
         # TODO: why adding the signature raises a numba warning about state_coupled being a non contiguous array?
-        @nb.njit #(nb.f8[:, :](nb.intc))
-        def c_sample(step: nb.intc):
+        @nb.njit((nb.f8[:, :])(nb.i8), cache=True)
+        def c_sample(step):
             # b = nb.carray(addr.address_as_void_pointer(b_addr), b_shape, dtype=b_dtype)
             b = addr.create_carray(b_addr, b_shape, b_dtype)
             return b
@@ -104,9 +104,8 @@ class HistoryNoDelays(History):
         c_vars = self.c_vars
         b_addr, b_shape, b_dtype = addr.get_addr(self.buffer)
 
-        @nb.njit(nb.void(nb.intc, nb.f8[:, :]))
-        def c_update(step: nb.intc, state: NDA_f8_2d):
-            # b = nb.carray(addr.address_as_void_pointer(b_addr), b_shape, dtype=b_dtype)
+        @nb.njit(nb.void(nb.i8, nb.f8[:, :]), cache=True)
+        def c_update(step, state):
             b = addr.create_carray(b_addr, b_shape, b_dtype)
             for i in range(n_cvars):
                 b[i, :] = state[c_vars[i], :]
