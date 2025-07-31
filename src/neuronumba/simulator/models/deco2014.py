@@ -26,6 +26,16 @@ from neuronumba.numba_tools.types import NDA_f8_2d
 from neuronumba.simulator.models import Model
 from neuronumba.simulator.models import LinearCouplingModel
 
+# Numba optimization settings
+NUMBA_CACHE = True
+NUMBA_FASTMATH = True
+NUMBA_NOGIL = True
+
+# Mathematical constants for optimization
+ONE = 1.0
+ZERO = 0.0
+EPS = 1e-12  # Small epsilon for numerical stability
+
 
 class Deco2014(LinearCouplingModel):
     """
@@ -199,7 +209,8 @@ class Deco2014(LinearCouplingModel):
         m = self.m.copy()
         P = self.P
 
-        @nb.njit(nb.types.UniTuple(nb.f8[:, :], 2)(nb.f8[:, :], nb.f8[:, :]))
+        @nb.njit(nb.types.UniTuple(nb.f8[:, :], 2)(nb.f8[:, :], nb.f8[:, :]),
+                 cache=NUMBA_CACHE, fastmath=NUMBA_FASTMATH, nogil=NUMBA_NOGIL)
         def Deco2014_dfun(state: NDA_f8_2d, coupling: NDA_f8_2d):
             """
             Compute derivatives of state variables and observable variables.
@@ -213,41 +224,70 @@ class Deco2014(LinearCouplingModel):
                 - state_derivatives: (2, n_rois) array with [dS_e/dt, dS_i/dt]
                 - observables: (2, n_rois) array with [Ie, re]
             """
+            # Pre-compute constants to avoid repeated parameter access
+            Jext_e = m[np.intp(P.Jext_e)]
+            I0 = m[np.intp(P.I0)]
+            w = m[np.intp(P.w)]
+            J_NMDA = m[np.intp(P.J_NMDA)]
+            J = m[np.intp(P.J)]
+            I_external = m[np.intp(P.I_external)]
+            Jext_i = m[np.intp(P.Jext_i)]
+            ae = m[np.intp(P.ae)]
+            be = m[np.intp(P.be)]
+            de = m[np.intp(P.de)]
+            ai = m[np.intp(P.ai)]
+            bi = m[np.intp(P.bi)]
+            di = m[np.intp(P.di)]
+            tau_e = m[np.intp(P.tau_e)]
+            tau_i = m[np.intp(P.tau_i)]
+            gamma_e = m[np.intp(P.gamma_e)]
+            gamma_i = m[np.intp(P.gamma_i)]
+            
             # Clamping synaptic gating variables to [0,1] range
-            Se = state[0, :].clip(0.0, 1.0)
-            Si = state[1, :].clip(0.0, 1.0)
+            Se = state[0, :].clip(ZERO, ONE)
+            Si = state[1, :].clip(ZERO, ONE)
 
             # Compute excitatory current I^E (Equation 5 in Deco et al. 2014)
             # I_e = J_ext_e * I_0 + w * J_NMDA * S_e + J_NMDA * coupling - J * S_i + I_external
-            Ie = (m[np.intp(P.Jext_e)] * m[np.intp(P.I0)] + 
-                  m[np.intp(P.w)] * m[np.intp(P.J_NMDA)] * Se + 
-                  m[np.intp(P.J_NMDA)] * coupling[0, :] - 
-                  m[np.intp(P.J)] * Si + 
-                  m[np.intp(P.I_external)])
+            Ie = (Jext_e * I0 + 
+                  w * J_NMDA * Se + 
+                  J_NMDA * coupling[0, :] - 
+                  J * Si + 
+                  I_external)
             
             # Compute inhibitory current I^I (Equation 6 in Deco et al. 2014)
             # I_i = J_ext_i * I_0 + J_NMDA * S_e - S_i
-            Ii = (m[np.intp(P.Jext_i)] * m[np.intp(P.I0)] + 
-                  m[np.intp(P.J_NMDA)] * Se - Si)
+            Ii = (Jext_i * I0 + 
+                  J_NMDA * Se - Si)
             
             # Compute excitatory firing rate using sigmoid function (Equation 7)
             # r_e = (a_e * I_e - b_e) / (1 - exp(-d_e * (a_e * I_e - b_e)))
-            y_e = m[np.intp(P.ae)] * Ie - m[np.intp(P.be)]
-            re = y_e / (1.0 - np.exp(-m[np.intp(P.de)] * y_e)) # Hz
+            y_e = ae * Ie - be
+            # Numerical stability: avoid division by zero
+            exp_term_e = np.exp(-de * y_e)
+            denominator_e = ONE - exp_term_e
+            # Avoid division by zero
+            denominator_e = np.where(np.abs(denominator_e) < EPS, EPS, denominator_e)
+            re = y_e / denominator_e  # Hz
             
             # Compute inhibitory firing rate using sigmoid function (Equation 8)
             # r_i = (a_i * I_i - b_i) / (1 - exp(-d_i * (a_i * I_i - b_i)))
-            y_i = m[np.intp(P.ai)] * Ii - m[np.intp(P.bi)]
-            ri = y_i / (1.0 - np.exp(-m[np.intp(P.di)] * y_i)) # Hz
+            y_i = ai * Ii - bi
+            # Numerical stability: avoid division by zero
+            exp_term_i = np.exp(-di * y_i)
+            denominator_i = ONE - exp_term_i
+            # Avoid division by zero
+            denominator_i = np.where(np.abs(denominator_i) < EPS, EPS, denominator_i)
+            ri = y_i / denominator_i  # Hz
             
-            # Compute state derivatives 
+            # Compute state derivatives using precomputed parameters
             # dS_e/dt = -S_e/tau_e + gamma_e * (1 - S_e) * r_e / 1000 (Equation 9)
-            dSe = (-Se / m[np.intp(P.tau_e)] + 
-                   m[np.intp(P.gamma_e)] * (1.0 - Se) * re)
+            dSe = (-Se / tau_e + 
+                   gamma_e * (ONE - Se) * re)
             
             # dS_i/dt = -S_i/tau_i + gamma_i * r_i (Equation 10)
-            dSi = (-Si / m[np.intp(P.tau_i)] + 
-                   m[np.intp(P.gamma_i)] * ri)
+            dSi = (-Si / tau_i + 
+                   gamma_i * ri)
             
             return np.stack((dSe, dSi)), np.stack((Ie, re))
 

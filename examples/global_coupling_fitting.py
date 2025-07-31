@@ -441,24 +441,28 @@ def run(args):
     else:
         RuntimeError("Neither --g not --g-range has been defined")
 
+
+def gen_arg_parser():
+    parser = argparse.ArgumentParser(description="Global coupling fitting script for NeuroNumba models.")
+    parser.add_argument("--full-scan", action='store_true', default=False, help="Full scan all models/observables/measures")
+    parser.add_argument("--nproc", type=int, default=10, help="Number of parallel processes")
+    parser.add_argument("--nsubj", type=int, help="Number of subjects for the simulations")
+    parser.add_argument("--g", type=float, help="Single point execution for a global coupling value")
+    parser.add_argument("--g-range", nargs=3, type=float, help="Parameter sweep range for G (start, end, step)")
+    parser.add_argument("--bpf", nargs=3, type=float, default=[2, 0.01, 0.1], help="Band pass filter to apply to BOLD signal (k, lp freq, hp freq)")
+    parser.add_argument("--model", type=str, default='Deco2014', help="Model to use (Hopf, Deco2014, Montbrio, Zerlaut1O, Zerlaut2O)")
+    parser.add_argument("--observables", nargs='+', type=str, required=True, help="Observables to use (FC, phFCD, swFCD)")
+    parser.add_argument("--measure", type=str, default='PS', help="Measure to use (PearsonSimilarity (PS), KolmogorovStatistic (KS))")
+    parser.add_argument("--out-path", type=str, required=True, help="Path to folder for output results")
+    parser.add_argument("--tr", type=float, required=True, help="Time resolution of fMRI scanner (seconds)")
+    parser.add_argument("--sc-scaling", type=float, default=0.2, help="Scaling factor for the SC matrix")
+    parser.add_argument("--tmax", type=float, required=False, help="Override simulation time (seconds)")
+    parser.add_argument("--fmri-path", type=str, required=True, help="Path to fMRI timeseries data")
+
+    return parser
+
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument("--full-scan", help="Full scan all models/observables/measures", action='store_true', default=False)
-    parser.add_argument("--nproc", help="Number of parallel processes", type=int, default=10)
-    parser.add_argument("--nsubj", help="Number of subject for the simulations", type=int)
-    parser.add_argument("--g", help="Single point execution for a global coupling value", type=float)
-    parser.add_argument("--g-range", nargs=3, help="Parameter sweep range for G (start, end, step)", type=float)
-    parser.add_argument("--bpf", nargs=3, help="Band pass fiter to apply to BOLD signal (k, lp freq, hp freq)", type=float, default=[2, 0.01, 0.1])
-    parser.add_argument("--model", help="Model to use (Hopf, Deco2014, Montbrio, Zerlaut1O, Zerlaut2O)", type=str, default='Deco2014')
-    parser.add_argument("--observables", help="Observables to use (FC, phFCD, swFCD)", nargs='+',type=str, required=True)
-    parser.add_argument("--measure", help="Measure to use (PearsonSimilarity (PS), KolmogorovStatistic (KS))", type=str, default='PS')
-    parser.add_argument("--out-path", help="Path to folder for output results", type=str, required=True)
-    parser.add_argument("--tr", help="Time resolution of fMRI scanner (seconds)", type=float, required=True)
-    parser.add_argument("--sc-scaling", help="Scaling factor for the SC matrix", type=float, default=0.2)
-    parser.add_argument("--tmax", help="Override simulation time (seconds)", type=float, required=False)
-    parser.add_argument("--fmri-path", help="Path to fMRI timeseries data", type=str, required=True)
-
+    parser = gen_arg_parser()
     args = parser.parse_args()  # for example, for a single test, use --ge-range 1.0 10.0 1.0
     if args.full_scan:
         models = ['Deco2014', 'Hopf', 'Montbrio', 'Zerlaut2O']
