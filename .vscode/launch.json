@@ -5,7 +5,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Global Fitting",
+            "name": "GC Model",
             "type": "debugpy",
             "request": "launch",
             "cwd": "${fileDirname}${pathSeparator}..${pathSeparator}examples",
@@ -14,14 +14,50 @@
             "env": {"PYTHONPATH": "..${pathSeparator}src"},
             "args": [
                 "--nsubj", "15",
-                "--observable", "swFCD", 
-                "--nproc", "10", 
+                "--observables", "swFCD", "FC", "phFCD",
+                "--nproc", "32", 
                 "--model", "Deco2014", 
-                "--g-range", "5.0", "10", "0.25",
+                "--g-range", "0.25", "15", "0.25",
                 "--tr", "720",
                 "--tmax", "600",
                 "--fmri-path", "./Data_Raw/ebrains_popovych",
-                "--out-path", "./Data_Produced/ebrains_popovych"
+                "--out-path", "./Data_Produced/ebrains_popovych/test_Deco2014"
+            ]
+        },
+        {
+            "name": "GC Single G",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${workspaceFolder}${pathSeparator}examples",
+            "program": ".${pathSeparator}global_coupling_fitting.py",
+            "console": "integratedTerminal",
+            "env": {"PYTHONPATH": "..${pathSeparator}src"},
+            "args": [
+                "--nsubj", "15",
+                "--observables", "swFCD", "FC", "phFCD",
+                "--model", "Zerlaut2O", 
+                "--g", "5.05",
+                "--tr", "720",
+                "--tmax", "600",
+                "--fmri-path", "./Data_Raw/ebrains_popovych",
+                "--out-path", "./Data_Produced/ebrains_popovych/test_z2o"
+            ]
+        },
+        {
+            "name": "Gen BOLD",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${fileDirname}${pathSeparator}..${pathSeparator}examples",
+            "program": ".${pathSeparator}gen_bold.py",
+            "console": "integratedTerminal",
+            "env": {"PYTHONPATH": "..${pathSeparator}src"},
+            "args": [
+                "--model", "Deco2014", 
+                "--g", "1.05",
+                "--tr", "720",
+                "--tmax", "600",
+                "--sc-matrix", "./Data_Raw/ebrains_popovych/000/Counts.csv",
+                "--out-path", "./Data_Produced/ebrains_popovych/sim_Deco2014"
             ]
         }
     ]
