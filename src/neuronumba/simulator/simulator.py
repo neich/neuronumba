@@ -1,3 +1,4 @@
+import time
 import numba as nb
 import numpy as np
 
@@ -64,7 +65,10 @@ class Simulator(HasAttr):
                 m_sample(step-1, new_state, new_observed)
                 state = new_state
 
+        start_time = time.perf_counter()
         _sim_loop(n_steps, init_state)
+        end_time = time.perf_counter()
+        return end_time - start_time
 
 
 # =====================================================================================
@@ -78,7 +82,7 @@ def simulate_nodelay(model, integrator, weights, obs_var, sampling_period, t_max
     history = HistoryNoDelays()
     monitor = TemporalAverage(period=sampling_period, monitor_vars=model.get_var_info([obs_var]))
     s = Simulator(connectivity=con, model=model, history=history, integrator=integrator, monitors=[monitor])
-    s.run(0, t_warmup + t_max_neuronal)
+    t = s.run(0, t_warmup + t_max_neuronal)
     data = monitor.data(obs_var)
     data_from = int(data.shape[0] * t_warmup / (t_max_neuronal + t_warmup))
     return data[data_from:, :]
