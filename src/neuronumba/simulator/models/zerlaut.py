@@ -606,8 +606,12 @@ class ZerlautAdaptationSecondOrder(ZerlautAdaptationFirstOrder):
         K_ext_i_val = m[np.intp(P.K_ext_i)]
         E_L_e_val = m[np.intp(P.E_L_e)]
         E_L_i_val = m[np.intp(P.E_L_i)]
+        ext_ex_ex = m[np.intp(P.external_input_ex_ex)]
+        ext_in_ex = m[np.intp(P.external_input_in_ex)]
+        ext_ex_in = m[np.intp(P.external_input_ex_in)]
+        ext_in_in = m[np.intp(P.external_input_in_in)]
 
-        @nb.njit(cache=NUMBA_CACHE, fastmath=NUMBA_FASTMATH, nogil=NUMBA_NOGIL)
+        @nb.njit(inline='always', cache=NUMBA_CACHE, fastmath=NUMBA_FASTMATH, nogil=NUMBA_NOGIL)
         def TF_excitatory(fe, fi, fe_ext, fi_ext, W):
             return TF(fe, fi, fe_ext, fi_ext, W,
                         P_e, E_L_e_val,
@@ -615,7 +619,7 @@ class ZerlautAdaptationSecondOrder(ZerlautAdaptationFirstOrder):
                         g_L_val, C_m_val, N_tot_val, p_connect_e_val, p_connect_i_val,
                         g_val, K_ext_e_val, K_ext_i_val)
 
-        @nb.njit(cache=NUMBA_CACHE, fastmath=NUMBA_FASTMATH, nogil=NUMBA_NOGIL)
+        @nb.njit(inline='always', cache=NUMBA_CACHE, fastmath=NUMBA_FASTMATH, nogil=NUMBA_NOGIL)
         def TF_inhibitory(fe, fi, fe_ext, fi_ext, W):
             return TF(fe, fi, fe_ext, fi_ext, W,
                     P_i, E_L_i_val,
@@ -779,10 +783,10 @@ class ZerlautAdaptationSecondOrder(ZerlautAdaptationFirstOrder):
             tau_OU_val = m[np.intp(P.tau_OU)]
             
             # Precompute external input parameters once
-            ext_ex_ex = m[np.intp(P.external_input_ex_ex)]
-            ext_in_ex = m[np.intp(P.external_input_in_ex)]
-            ext_ex_in = m[np.intp(P.external_input_ex_in)]
-            ext_in_in = m[np.intp(P.external_input_in_in)]
+            # ext_ex_ex = m[np.intp(P.external_input_ex_ex)]
+            # ext_in_ex = m[np.intp(P.external_input_in_ex)]
+            # ext_ex_in = m[np.intp(P.external_input_ex_in)]
+            # ext_in_in = m[np.intp(P.external_input_in_in)]
 
             # Adaptation excitatory - use precomputed values
             mu_V_e, sigma_V_e, T_V_e = get_fluct_regime_vars(
