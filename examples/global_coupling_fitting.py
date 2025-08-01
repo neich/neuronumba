@@ -50,7 +50,7 @@ def save_selected_subjcets(path, subj):
             writer.writerow([s])
 
 
-def load_subjects_data(fmri_path):
+def load_subjects_data(fmri_path, max_subjects=21):
     # This function is highly dependent on your input data layout
     # This example is configured for the data downloaded by EBRAINS
     # Read: examples/Data_Raw/ebrains_popovych/README.md
@@ -58,8 +58,8 @@ def load_subjects_data(fmri_path):
         raise FileNotFoundError(f"Path <{fmri_path}> does not exist or is not a folder!")
     n_sub = 0
     result = {}
-    for path in os.listdir(fmri_path):
-        subject_path = os.path.join(fmri_path, path)
+    for n_sub in range(max_subjects):
+        subject_path = os.path.join(fmri_path, f'{n_sub:03d}')
         if os.path.isdir(subject_path):
             fmri_file = os.path.join(subject_path, 'rfMRI_REST1_LR_BOLD.csv')
             if not os.path.isfile(fmri_file):
@@ -251,7 +251,10 @@ def process_empirical_subjects(bold_signals, observables, bpf=None, verbose=True
         if bpf is not None:
             signal = bpf.filter(signal)
         for ds, (observable, accumulator, _, _) in observables.items():
+            start_time = time.perf_counter()
             procSignal = observable.from_fmri(signal)
+            if verbose:
+                print(f"   Time to process observable {ds} for subject {s}: {time.perf_counter() - start_time:.2f} seconds")
             measureValues[ds] = accumulator.accumulate(measureValues[ds], pos, procSignal[ds])
 
     for ds, (observable, accumulator, _, _) in observables.items():
@@ -445,6 +448,7 @@ def run(args):
 def gen_arg_parser():
     parser = argparse.ArgumentParser(description="Global coupling fitting script for NeuroNumba models.")
     parser.add_argument("--full-scan", action='store_true', default=False, help="Full scan all models/observables/measures")
+    parser.add_argument("--verbose", action='store_true', default=False, help="Prints extra information during execution")
     parser.add_argument("--nproc", type=int, default=10, help="Number of parallel processes")
     parser.add_argument("--nsubj", type=int, help="Number of subjects for the simulations")
     parser.add_argument("--g", type=float, help="Single point execution for a global coupling value")

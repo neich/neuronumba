@@ -50,3 +50,56 @@ def erfc_complex_array(z):
         erf = 1.0 - y * np.exp(-val * val)
         result.flat[i] = 1.0 - sign * erf
     return result
+
+
+@nb.njit
+def pearson_corr_numba_1d(x, y):
+    n = x.size
+    mean_x = 0.0
+    mean_y = 0.0
+    for i in range(n):
+        mean_x += x[i]
+        mean_y += y[i]
+    mean_x /= n
+    mean_y /= n
+
+    num = 0.0
+    den_x = 0.0
+    den_y = 0.0
+    for i in range(n):
+        dx = x[i] - mean_x
+        dy = y[i] - mean_y
+        num += dx * dy
+        den_x += dx * dx
+        den_y += dy * dy
+    return num / np.sqrt(den_x * den_y)
+
+@nb.njit
+def pearson_corrcoef_numba_2d(X):
+    n_vars, n_obs = X.shape
+    result = np.empty((n_vars, n_vars), dtype=np.float64)
+    means = np.empty(n_vars, dtype=np.float64)
+    stds = np.empty(n_vars, dtype=np.float64)
+    
+    # Compute means and std deviations for each variable (row)
+    for i in range(n_vars):
+        sum_x = 0.0
+        for k in range(n_obs):
+            sum_x += X[i, k]
+        means[i] = sum_x / n_obs
+        
+        sum_sq = 0.0
+        for k in range(n_obs):
+            dx = X[i, k] - means[i]
+            sum_sq += dx * dx
+        stds[i] = np.sqrt(sum_sq / n_obs)
+    
+    # Compute the correlation matrix
+    for i in range(n_vars):
+        for j in range(n_vars):
+            num = 0.0
+            for k in range(n_obs):
+                num += (X[i, k] - means[i]) * (X[j, k] - means[j])
+            denom = n_obs * stds[i] * stds[j]
+            result[i, j] = num / denom if denom != 0 else 0.0
+    return result
