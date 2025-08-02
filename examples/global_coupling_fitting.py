@@ -203,7 +203,7 @@ def eval_one_param(exec_env, g):
 
 
 def compute_g(exec_env, g):
-    out_file = exec_env['out_file_name_pattern'].format(np.round(g, decimals=3))
+    out_file = exec_env['out_file']
     force_recomputations = False if 'force_recomputations' not in exec_env else exec_env['force_recomputations']
 
     observables = exec_env['observables']
@@ -244,9 +244,8 @@ def process_empirical_subjects(bold_signals, observables, bpf=None, verbose=True
         # BOLD signals from file have inverse shape
         signal = bold_signals[s].T  # need to be transposed for the rest of NeuroNumba...
 
-        if verbose:
-            print('   Processing signal {}/{} Subject: {} ({}x{})'.format(pos + 1, num_subjects, s, signal.shape[0],
-                                                                    signal.shape[1]), flush=True)
+        print('   Processing signal {}/{} Subject: {} ({}x{})'.format(pos + 1, num_subjects, s, signal.shape[0],
+                                                                      signal.shape[1]), flush=True)
 
         if bpf is not None:
             signal = bpf.filter(signal)
@@ -374,7 +373,7 @@ def run(args):
             'bold': bold,
             'bold_model': BoldStephan2008().configure(),
             'bold_bpf': bpf,
-            'out_file_name_pattern': out_file_name_pattern,
+            'out_file': out_file_name_pattern.format(np.round(args.g, decimals=3)),
             'num_subjects': n_subj,
             't_max_neuronal': t_max_neuronal,
             't_warmup': t_warmup,
@@ -405,7 +404,7 @@ def run(args):
                     'obs_var': obs_var,
                     'bold': bold,
                     'bold_model': BoldStephan2008().configure(),
-                    'out_file_name_pattern': out_file_name_pattern,
+                    'out_file': out_file_name_pattern.format(np.round(g, decimals=3)),
                     'num_subjects': n_subj,
                     't_max_neuronal': t_max_neuronal,
                     't_warmup': t_warmup,
