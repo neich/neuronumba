@@ -6,6 +6,7 @@ from neuronumba.basic.attr import HasAttr, Attr
 from neuronumba.numba_tools import addr
 from neuronumba.numba_tools.addr import address_as_void_pointer
 from neuronumba.numba_tools.types import NDA_f8_2d
+from neuronumba.numba_tools.config import NUMBA_CACHE, NUMBA_FASTMATH, NUMBA_NOGIL
 
 class Monitor(HasAttr):
     dt = Attr(required=True)
@@ -109,7 +110,7 @@ class RawSubSample(Monitor):
         n_obs = nb.intc(self.n_obs_vars)
         n_interim_samples = nb.intc(self.n_interim_samples)
 
-        @nb.njit(nb.void(nb.i8, nb.f8[:, :], nb.f8[:, :]), cache=True)
+        @nb.njit(nb.void(nb.i8, nb.f8[:, :], nb.f8[:, :]), cache=NUMBA_CACHE)
         def m_sample(step, state, observed):
             if step % n_interim_samples == 0:
                 if n_state > 0:
@@ -188,7 +189,7 @@ class TemporalAverage(Monitor):
         n_obs = nb.intc(self.n_obs_vars)
         n_interim_samples = nb.intc(self.n_interim_samples)
 
-        @nb.njit(nb.void(nb.intc, nb.f8[:, :], nb.f8[:, :]), cache=True)
+        @nb.njit(nb.void(nb.intc, nb.f8[:, :], nb.f8[:, :]), cache=NUMBA_CACHE)
         def m_sample(step, state, observed):
             # Precompute the divisor for optimization
             inv_ibs_shape_0 = 1.0 / ibs_shape[0]

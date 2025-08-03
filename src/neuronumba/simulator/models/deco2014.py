@@ -25,17 +25,12 @@ from neuronumba.numba_tools.addr import address_as_void_pointer
 from neuronumba.numba_tools.types import NDA_f8_2d
 from neuronumba.simulator.models import Model
 from neuronumba.simulator.models import LinearCouplingModel
-
-# Numba optimization settings
-NUMBA_CACHE = True
-NUMBA_FASTMATH = True
-NUMBA_NOGIL = True
+from neuronumba.numba_tools.config import NUMBA_CACHE, NUMBA_FASTMATH, NUMBA_NOGIL
 
 # Mathematical constants for optimization
 ONE = 1.0
 ZERO = 0.0
 EPS = 1e-12  # Small epsilon for numerical stability
-
 
 class Deco2014(LinearCouplingModel):
     """

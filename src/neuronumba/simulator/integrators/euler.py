@@ -4,6 +4,7 @@ import numba as nb
 from neuronumba.basic.attr import HasAttr, Attr
 from neuronumba.numba_tools.types import NDA_f8_2d, NDA_f8_1d
 from neuronumba.simulator.integrators.base_integrator import Integrator
+from neuronumba.numba_tools.config import NUMBA_CACHE, NUMBA_FASTMATH, NUMBA_NOGIL
 
 
 class EulerDeterministic(Integrator):
@@ -12,7 +13,7 @@ class EulerDeterministic(Integrator):
         dt = self.dt
         stimulus = np.empty((1, 1))
 
-        @nb.njit(nb.types.UniTuple(nb.f8[:, :], 2)(nb.f8[:, :], nb.f8[:, :]), cache=True)
+        @nb.njit(nb.types.UniTuple(nb.f8[:, :], 2)(nb.f8[:, :], nb.f8[:, :]), cache=NUMBA_CACHE)
         def scheme(state, coupling):
             d_state, observed = dfun(state, coupling)
             if stimulus.shape[1] == state.shape[1]:
@@ -37,7 +38,7 @@ class EulerStochastic(Integrator):
         sigmas = self.sigmas
         sqrt_dt = self._sqrt_dt
 
-        @nb.njit(nb.types.UniTuple(nb.f8[:, :], 2)(nb.f8[:, :], nb.f8[:, :]), cache=True)
+        @nb.njit(nb.types.UniTuple(nb.f8[:, :], 2)(nb.f8[:, :], nb.f8[:, :]), cache=NUMBA_CACHE)
         def scheme(state, coupling):
             d_state, observed = dfun(state, coupling)
             if stimulus.shape[1] == state.shape[1]:

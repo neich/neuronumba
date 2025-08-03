@@ -42,6 +42,7 @@ from neuronumba.numba_tools.addr import address_as_void_pointer
 from neuronumba.numba_tools.types import NDA_f8_1d, NDA_f8_2d
 from neuronumba.simulator.models import Model
 from neuronumba.tools.matlab_tricks import correlation_from_covariance
+from neuronumba.numba_tools.config import NUMBA_CACHE, NUMBA_FASTMATH, NUMBA_NOGIL
 
 
 class Hopf(Model):
@@ -101,7 +102,7 @@ class Hopf(Model):
         g = self.g
 
         # TODO: why adding the signature raises a numba warning about state_coupled being a non contiguous array?
-        @nb.njit(nb.f8[:, :](nb.f8[:, :]), cache=True)
+        @nb.njit(nb.f8[:, :](nb.f8[:, :]), cache=NUMBA_CACHE)
         def hopf_coupling(state):
             r = np.dot(state, wt)
             return g * (r - ink * state)
@@ -113,7 +114,7 @@ class Hopf(Model):
         P = self.P
 
         @nb.njit(nb.types.UniTuple(nb.f8[:, :], 2)(nb.f8[:, :], nb.f8[:, :]),
-                 cache=True)
+                 cache=NUMBA_CACHE)
         def Hopf_dfun(state, coupling):
             x = state[0, :]
             y = state[1, :]
