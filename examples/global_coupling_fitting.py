@@ -460,7 +460,7 @@ def gen_arg_parser():
     parser.add_argument("--tr", type=float, required=True, help="Time resolution of fMRI scanner (seconds)")
     parser.add_argument("--sc-scaling", type=float, default=0.2, help="Scaling factor for the SC matrix")
     parser.add_argument("--tmax", type=float, required=False, help="Override simulation time (seconds)")
-    parser.add_argument("--fmri-path", type=str, required=True, help="Path to fMRI timeseries data")
+    parser.add_argument("--fmri-path", type=str, help="Path to fMRI timeseries data")
 
     return parser
 
