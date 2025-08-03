@@ -36,6 +36,7 @@ from neuronumba.numba_tools.addr import address_as_void_pointer
 from neuronumba.numba_tools.types import NDA_f8_2d
 from neuronumba.simulator.models import Model
 from neuronumba.simulator.models import LinearCouplingModel
+from neuronumba.numba_tools.config import NUMBA_CACHE, NUMBA_FASTMATH, NUMBA_NOGIL
 
 
 class Naskar2021(LinearCouplingModel):
@@ -103,7 +104,7 @@ class Naskar2021(LinearCouplingModel):
         P = self.P
 
         @nb.njit(nb.types.UniTuple(nb.f8[:, :], 2)(nb.f8[:, :], nb.f8[:, :]),
-                 cache=True)
+                 cache=NUMBA_CACHE)
         def Naskar2021_dfun(state, coupling):                
             Se = np.clip(state[0, :], 0.0, 1.0)
             Si = np.clip(state[1, :], 0.0, 1.0)

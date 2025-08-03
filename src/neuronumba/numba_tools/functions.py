@@ -1,8 +1,9 @@
 import math
 import numba as nb
 import numpy as np
+from neuronumba.numba_tools.config import NUMBA_CACHE, NUMBA_FASTMATH, NUMBA_NOGIL
 
-@nb.njit(nb.f8[:](nb.f8[:]), cache=True)
+@nb.njit(nb.f8[:](nb.f8[:]), cache=NUMBA_CACHE)
 def erfc_approx(x):
     # Coefficients for approximation
     p = 0.3275911

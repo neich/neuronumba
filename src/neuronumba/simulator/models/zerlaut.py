@@ -13,15 +13,11 @@ from neuronumba.numba_tools.functions import erfc_approx, erfc_complex_array
 from neuronumba.numba_tools.types import NDA_f8_2d
 from neuronumba.simulator.models import Model
 from neuronumba.simulator.models import LinearCouplingModel
+from neuronumba.numba_tools.config import NUMBA_CACHE, NUMBA_FASTMATH, NUMBA_NOGIL
 
 # Precompute constants for better performance
 sqrt2 = math.sqrt(2.0)
 sqrt2_inv = 1.0 / sqrt2
-
-# Numba optimization flags
-NUMBA_CACHE = True
-NUMBA_FASTMATH = True
-NUMBA_NOGIL = True
 
 @nb.njit(cache=NUMBA_CACHE, fastmath=NUMBA_FASTMATH, nogil=NUMBA_NOGIL)
 def get_fluct_regime_vars(Fe, Fi, Fe_ext, Fi_ext, W,
@@ -98,7 +94,7 @@ def threshold_func(muV, sigmaV, TvN, P0, P1, P2, P3, P4, P5, P6, P7, P8, P9):
     # Eqns 11 from [MV_2018]
     return P0 + P1 * V + P2 * S + P3 * T + P4 * V ** 2 + P5 * S ** 2 + P6 * T ** 2 + P7 * V * S + P8 * V * T + P9 * S * T
 
-# @nb.njit(cache=True)
+# @nb.njit(cache=NUMBA_CACHE)
 # def estimate_firing_rate(muV, sigmaV, Tv, Vthre):
 #     """
 #     The threshold function of the neurons

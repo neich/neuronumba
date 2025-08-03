@@ -4,6 +4,7 @@ import numba as nb
 from neuronumba.basic.attr import HasAttr, Attr
 from neuronumba.numba_tools import addr
 from neuronumba.numba_tools.types import NDA_f8_2d
+from neuronumba.numba_tools.config import NUMBA_CACHE, NUMBA_FASTMATH, NUMBA_NOGIL
 
 
 class History(HasAttr):
@@ -42,7 +43,7 @@ class HistoryDense(History):
         # addr = buffer.ctypes.data
         b_addr, b_shape, b_dtype = addr.get_addr(self.buffer)
 
-        @nb.njit((nb.void)(nb.int, nb.f8[:,:]), cache=True)
+        @nb.njit((nb.void)(nb.int, nb.f8[:,:]), cache=NUMBA_CACHE)
         def c_update(step: nb.int, state: NDA_f8_2d):
             # data = nb.carray(addr.address_as_void_pointer(addr), buffer.shape,
             #                  dtype=buffer.dtype)
@@ -62,7 +63,7 @@ class HistoryDense(History):
         n_rois = self.n_rois
         g = self.g
 
-        @nb.njit((nb.f8[:,:])(nb.int), cache=True)
+        @nb.njit((nb.f8[:,:])(nb.int), cache=NUMBA_CACHE)
         def h_sample(step):
             time_idx = (step - 1 - i_delays + n_time) % n_time
             result = np.empty((n_cvars, n_rois))
@@ -91,7 +92,7 @@ class HistoryNoDelays(History):
         b_addr, b_shape, b_dtype = addr.get_addr(self.buffer)
 
         # TODO: why adding the signature raises a numba warning about state_coupled being a non contiguous array?
-        @nb.njit((nb.f8[:, :])(nb.i8), cache=True)
+        @nb.njit((nb.f8[:, :])(nb.i8), cache=NUMBA_CACHE)
         def c_sample(step):
             # b = nb.carray(addr.address_as_void_pointer(b_addr), b_shape, dtype=b_dtype)
             b = addr.create_carray(b_addr, b_shape, b_dtype)
@@ -104,7 +105,7 @@ class HistoryNoDelays(History):
         c_vars = self.c_vars
         b_addr, b_shape, b_dtype = addr.get_addr(self.buffer)
 
-        @nb.njit(nb.void(nb.i8, nb.f8[:, :]), cache=True)
+        @nb.njit(nb.void(nb.i8, nb.f8[:, :]), cache=NUMBA_CACHE)
         def c_update(step, state):
             b = addr.create_carray(b_addr, b_shape, b_dtype)
             for i in range(n_cvars):

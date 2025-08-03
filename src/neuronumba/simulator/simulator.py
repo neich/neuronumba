@@ -9,6 +9,7 @@ from neuronumba.simulator.connectivity import Connectivity
 from neuronumba.simulator.history import HistoryNoDelays
 from neuronumba.simulator.integrators import EulerStochastic
 from neuronumba.simulator.monitors import TemporalAverage
+from neuronumba.numba_tools.config import NUMBA_CACHE, NUMBA_FASTMATH, NUMBA_NOGIL
 
 
 class Simulator(HasAttr):
@@ -55,7 +56,7 @@ class Simulator(HasAttr):
 
         h_update(0, init_state)
 
-        @nb.njit(nb.void(nb.i8, nb.f8[:, :]), cache=True)
+        @nb.njit(nb.void(nb.i8, nb.f8[:, :]), cache=NUMBA_CACHE)
         def _sim_loop(n_steps, state):
             for step in range(1, n_steps + 1):
                 previous_state_coupled = h_sample(step)

@@ -6,6 +6,7 @@ import numpy as np
 from overrides import overrides
 
 from neuronumba.basic.attr import HasAttr, Attr, AttrEnum
+from neuronumba.numba_tools.config import NUMBA_CACHE, NUMBA_FASTMATH, NUMBA_NOGIL
 
 
 class ParameterEnum(object):
@@ -153,7 +154,7 @@ class LinearCouplingModel(Model):
         wtg = self.g * self.weights_t.copy()
 
         # TODO: why adding the signature raises a numba warning about state_coupled being a non contiguous array?
-        @nb.njit(nb.f8[:, :](nb.f8[:, :]), cache=True)
+        @nb.njit(nb.f8[:, :](nb.f8[:, :]), cache=NUMBA_CACHE)
         def linear_coupling(state):
             """
 
