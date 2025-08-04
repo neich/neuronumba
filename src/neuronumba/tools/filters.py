@@ -5,12 +5,12 @@ from neuronumba.basic.attr import HasAttr, Attr
 
 
 class BandPassFilter(HasAttr):
-    
-    k = Attr(default=2, required=False)
-    tr = Attr(default=None, required=True)
-    flp = Attr(default=None, required=True)
-    fhi = Attr(default=None, required=True)
-    remove_artifacts = Attr(default=True, required=False)
+
+    k = Attr(default=2, required=False, doc="Filter order")
+    tr = Attr(default=None, required=True, doc="Repetition time in milliseconds")
+    flp = Attr(default=None, required=True, doc="Low cut-off frequency in Hz")
+    fhi = Attr(default=None, required=True, doc="High cut-off frequency in Hz")
+    remove_artifacts = Attr(default=True, required=False, doc="Remove artifacts")
 
     apply_demean = Attr(default=True, required=False)
     apply_detrend = Attr(default=True, required=False)
