@@ -33,6 +33,94 @@ from neuronumba.simulator.simulator import simulate_nodelay
 from neuronumba.tools.loader import load_2d_matrix
 
 
+class ObservableConfig:
+    """
+    Configuration class for observables that encapsulates the observable,
+    accumulator, distance measure, and optional band-pass filter.
+    """
+    
+    def __init__(self, observable, accumulator, distance_measure, band_pass_filter=None):
+        """
+        Initialize observable configuration.
+        
+        Args:
+            observable: The observable instance (FC, PhFCD, SwFCD, etc.)
+            accumulator: The accumulator instance (AveragingAccumulator, ConcatenatingAccumulator)
+            distance_measure: The distance measure instance (PearsonSimilarity, KolmogorovSmirnovStatistic)
+            band_pass_filter: Optional band-pass filter instance (BandPassFilter or None)
+        """
+        self.observable = observable
+        self.accumulator = accumulator
+        self.distance_measure = distance_measure
+        self.band_pass_filter = band_pass_filter
+    
+    def init_accumulator(self, num_subjects, n_rois):
+        """Initialize the accumulator for this observable."""
+        return self.accumulator.init(num_subjects, n_rois)
+    
+    def process_signal(self, signal, pos, measure_values):
+        """
+        Process a signal through the observable and accumulate results.
+        
+        Args:
+            signal: The input signal
+            pos: Position/index for accumulation
+            measure_values: The accumulated measure values
+            
+        Returns:
+            Updated measure values
+        """
+        # Apply band-pass filter if configured (create a copy to avoid modifying original)
+        processed_signal = signal
+        if self.band_pass_filter is not None:
+            processed_signal = self.band_pass_filter.filter(signal.copy())
+        
+        # Process signal through observable
+        observable_result = self.observable.from_fmri(processed_signal)
+        
+        # Get the observable name (key) for the processed signal
+        observable_name = next(iter(observable_result.keys()))
+        
+        # Accumulate results
+        return self.accumulator.accumulate(measure_values, pos, observable_result[observable_name])
+    
+    def postprocess(self, measure_values):
+        """Postprocess the accumulated measure values."""
+        return self.accumulator.postprocess(measure_values)
+    
+    def compute_distance(self, simulated_data, empirical_data):
+        """Compute distance between simulated and empirical data."""
+        return self.distance_measure.distance(simulated_data, empirical_data)
+    
+    def __repr__(self):
+        return (f"ObservableConfig(observable={self.observable.__class__.__name__}, "
+                f"accumulator={self.accumulator.__class__.__name__}, "
+                f"distance_measure={self.distance_measure.__class__.__name__}, "
+                f"band_pass_filter={self.band_pass_filter.__class__.__name__ if self.band_pass_filter else None})")
+
+
+def create_observable_config(observable_name, distance_measure, band_pass_filter=None):
+    """
+    Factory function to create ObservableConfig instances.
+    
+    Args:
+        observable_name: Name of the observable ('FC', 'phFCD', 'swFCD')
+        distance_measure: Distance measure instance
+        band_pass_filter: Optional band-pass filter
+        
+    Returns:
+        ObservableConfig instance
+    """
+    if observable_name == 'FC':
+        return ObservableConfig(FC(), AveragingAccumulator(), distance_measure, band_pass_filter)
+    elif observable_name == 'phFCD':
+        return ObservableConfig(PhFCD(), ConcatenatingAccumulator(), distance_measure, band_pass_filter)
+    elif observable_name == 'swFCD':
+        return ObservableConfig(SwFCD(), ConcatenatingAccumulator(), distance_measure, band_pass_filter)
+    else:
+        raise RuntimeError(f"Observable <{observable_name}> not supported!")
+
+
 def load_subject_list(path):
     subjects = []
     with open(path, newline='') as csvfile:
@@ -120,7 +208,6 @@ def simulate_single_subject(exec_env, g):
     if bold:
         b = exec_env['bold_model']
         bds = b.compute_bold(signal, sampling_period)
-        bds = exec_env['bold_bpf'].filter(bds)  # Remove the first 20 samples
     else:
         # Some models like Hopf do not require explicit computation of BOLD signal
         # BUT, we still have to convert the signal into samples of size tr
@@ -138,7 +225,7 @@ def simulate_single_subject(exec_env, g):
 def process_bold_signals(bold_signals, exec_env):
     # Process the BOLD signals
     # BOLDSignals is a dictionary of subjects {subjectName: subjectBOLDSignal}
-    # observablesToUse is a dictionary of {observableName: observablePythonModule}
+    # observables is a dictionary of {observableName: ObservableConfig}
     num_subjects = len(bold_signals)
     N = bold_signals[next(iter(bold_signals))].shape[1]
 
@@ -147,7 +234,7 @@ def process_bold_signals(bold_signals, exec_env):
     # First, let's create a data structure for the observables operations...
     measureValues = {}
     for ds in observables:  # Initialize data structs for each observable
-        measureValues[ds] = observables[ds][1].init(num_subjects, N)
+        measureValues[ds] = observables[ds].init_accumulator(num_subjects, N)
 
     # Loop over subjects
     for pos, s in enumerate(bold_signals):
@@ -156,20 +243,14 @@ def process_bold_signals(bold_signals, exec_env):
         start_time = time.perf_counter()
 
         for ds in observables:  # Now, let's compute each measure and store the results
-            measure = observables[ds][0]
-            accumulator = observables[ds][1]
-            if observables[ds][3] is not None:
-                bpf = observables[ds][3]
-                signal = bpf.filter(signal)
-            # FC, swFCD, phFCD, ...
-            proc_signal = measure.from_fmri(signal)
-            measureValues[ds] = accumulator.accumulate(measureValues[ds], pos, proc_signal[ds])
+            observable_config = observables[ds]
+            measureValues[ds] = observable_config.process_signal(signal, pos, measureValues[ds])
 
         print(" -> computed in {} seconds".format(time.perf_counter() - start_time))
 
     for ds in observables:  # finish computing each observable
-        accumulator = observables[ds][1]  # FC, swFCD, phFCD, ...
-        measureValues[ds] = accumulator.postprocess(measureValues[ds])
+        observable_config = observables[ds]
+        measureValues[ds] = observable_config.postprocess(measureValues[ds])
 
     return measureValues
 
@@ -217,7 +298,7 @@ def compute_g(exec_env, g):
         sim_measures = eval_one_param(exec_env, g)
         sim_measures['g'] = g  # Add the g value to the result
         for ds in observables:
-            sim_measures[f'dist_{ds}'] = observables[ds][2].distance(sim_measures[ds], processed[ds])
+            sim_measures[f'dist_{ds}'] = observables[ds].compute_distance(sim_measures[ds], processed[ds])
         hdf.savemat(out_file, sim_measures)
 
     for ds in observables:
@@ -226,18 +307,18 @@ def compute_g(exec_env, g):
     return sim_measures
 
 
-def process_empirical_subjects(bold_signals, observables, bpf=None, verbose=True):
+def process_empirical_subjects(bold_signals, observables: dict[str, ObservableConfig], verbose=True):
     # Process the BOLD signals
     # BOLDSignals is a dictionary of subjects {subjectName: subjectBOLDSignal}
-    # observablesToUse is a dictionary of {observableName: observablePythonModule}
+    # observables is a dictionary of {observableName: ObservableConfig}
     num_subjects = len(bold_signals)
     # get the first key to retrieve the value of N = number of areas
     n_rois = bold_signals[next(iter(bold_signals))].shape[0]
 
     # First, let's create a data structure for the observables operations...
     measureValues = {}
-    for ds, (_, accumulator, _, _) in observables.items():
-        measureValues[ds] = accumulator.init(num_subjects, n_rois)
+    for ds, observable_config in observables.items():
+        measureValues[ds] = observable_config.init_accumulator(num_subjects, n_rois)
 
     # Loop over subjects
     for pos, s in enumerate(bold_signals):
@@ -247,17 +328,14 @@ def process_empirical_subjects(bold_signals, observables, bpf=None, verbose=True
         print('   Processing signal {}/{} Subject: {} ({}x{})'.format(pos + 1, num_subjects, s, signal.shape[0],
                                                                       signal.shape[1]), flush=True)
 
-        if bpf is not None:
-            signal = bpf.filter(signal)
-        for ds, (observable, accumulator, _, _) in observables.items():
+        for ds, observable_config in observables.items():
             start_time = time.perf_counter()
-            procSignal = observable.from_fmri(signal)
+            measureValues[ds] = observable_config.process_signal(signal, pos, measureValues[ds])
             if verbose:
                 print(f"   Time to process observable {ds} for subject {s}: {time.perf_counter() - start_time:.2f} seconds")
-            measureValues[ds] = accumulator.accumulate(measureValues[ds], pos, procSignal[ds])
 
-    for ds, (observable, accumulator, _, _) in observables.items():
-        measureValues[ds] = accumulator.postprocess(measureValues[ds])
+    for ds, observable_config in observables.items():
+        measureValues[ds] = observable_config.postprocess(measureValues[ds])
 
     return measureValues
 
@@ -328,18 +406,11 @@ def run(args):
     else:
         measure = KolmogorovSmirnovStatistic()
 
+    bpf = BandPassFilter(tr=tr, k=args.bpf[0], flp=args.bpf[1], fhi=args.bpf[2]) if args.bpf is not None else None
+
     observables = {}
     for observable_name in args.observables:
-        if observable_name == 'FC':
-            observables.update({observable_name: (FC(), AveragingAccumulator(), measure, None)})
-        elif observable_name == 'phFCD':
-            observables.update({observable_name: (PhFCD(), ConcatenatingAccumulator(), measure, None)})
-        elif observable_name == 'swFCD':
-            observables.update({observable_name: (SwFCD(), ConcatenatingAccumulator(), measure, None)})
-        else:
-            RuntimeError(f"Observable <{observable_name}> not supported!")
-
-    bpf = BandPassFilter(tr=tr, k=args.bpf[0], flp=args.bpf[1], fhi=args.bpf[2])
+        observables[observable_name] = create_observable_config(observable_name, measure, bpf)
 
     all_fMRI = {s: d for s, d in enumerate(timeseries)}
 
@@ -350,11 +421,10 @@ def run(args):
     # Process (or load) empirical data
     emp_filename = os.path.join(out_file_path, 'fNeuro_emp.mat')
     if not os.path.exists(emp_filename):
-        bpf_emp = BandPassFilter(k=2, flp=0.01, fhi=0.09, tr=tr, apply_detrend=True, apply_demean=True)
-        processed = process_empirical_subjects(all_fMRI, observables, bpf_emp)
+        processed = process_empirical_subjects(all_fMRI, observables)
         hdf.savemat(emp_filename, processed)
     else:
-        processed = {observable_name: load_2d_matrix(emp_filename, index=observable_name)}
+        processed = {observable_name: load_2d_matrix(emp_filename, index=observable_name) for observable_name in observables.keys()}
 
     out_file_name_pattern = os.path.join(out_file_path, 'fitting_g{}.mat')
 
@@ -372,7 +442,6 @@ def run(args):
             'obs_var': obs_var,
             'bold': bold,
             'bold_model': BoldStephan2008().configure(),
-            'bold_bpf': bpf,
             'out_file': out_file_name_pattern.format(np.round(args.g, decimals=3)),
             'num_subjects': n_subj,
             't_max_neuronal': t_max_neuronal,
@@ -393,14 +462,12 @@ def run(args):
             for g in gs:
                 exec_env = {
                     'verbose': True,
-                    'i': i,
                     'model': copy.deepcopy(model),
                     'integrator': copy.deepcopy(integrator),
                     'weights': sc_norm,
                     'processed': processed,
                     'tr': tr,
                     'observables': copy.deepcopy(observables),
-                    'bold_bpf': bpf,
                     'obs_var': obs_var,
                     'bold': bold,
                     'bold_model': BoldStephan2008().configure(),
@@ -452,7 +519,7 @@ def gen_arg_parser():
     parser.add_argument("--nsubj", type=int, help="Number of subjects for the simulations")
     parser.add_argument("--g", type=float, help="Single point execution for a global coupling value")
     parser.add_argument("--g-range", nargs=3, type=float, help="Parameter sweep range for G (start, end, step)")
-    parser.add_argument("--bpf", nargs=3, type=float, default=[2, 0.01, 0.1], help="Band pass filter to apply to BOLD signal (k, lp freq, hp freq)")
+    parser.add_argument("--bpf", nargs=3, type=float, required=False, help="Band pass filter to apply to BOLD signal (k, lp freq, hp freq)")
     parser.add_argument("--model", type=str, default='Deco2014', help="Model to use (Hopf, Deco2014, Montbrio, Zerlaut1O, Zerlaut2O)")
     parser.add_argument("--observables", nargs='+', type=str, required=True, help="Observables to use (FC, phFCD, swFCD)")
     parser.add_argument("--measure", type=str, default='PS', help="Measure to use (PearsonSimilarity (PS), KolmogorovStatistic (KS))")
