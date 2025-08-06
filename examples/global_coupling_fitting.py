@@ -2,14 +2,14 @@ import argparse
 import copy
 import csv
 import gc
+import glob
 import itertools
 import os
 import time
 import sys
 
-import h5py
 import numpy as np
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import matplotlib.pyplot as plt
 from numpy.ma.core import repeat
 
@@ -340,6 +340,67 @@ def process_empirical_subjects(bold_signals, observables: dict[str, ObservableCo
     return measureValues
 
 
+def executor_simulate_single_subject(n, exec_env, g):
+    try:
+        return n, simulate_single_subject(exec_env, g)
+    except Exception as e:
+        print(f"Error simulating subject {n}: {e}", file=sys.stderr)
+        raise
+
+
+def compute_g_mp(exec_env, g, nproc):
+    out_file = exec_env['out_file']
+
+    if os.path.exists(out_file):
+        print(f"File {out_file} already exists, skipping...")
+        return    
+
+    print(f'Computing distance for G={g}', flush=True)
+
+    subjects = list(range(exec_env['num_subjects']))
+    results = []
+    print(f'Creating process pool with {nproc} workers')
+    while len(subjects) > 0:
+        print(f"EXECUTOR --- START cycle for {len(subjects)} subjects")
+        pool = ProcessPoolExecutor(max_workers=nproc)
+        futures = []
+        future2subj = {}
+        for n in subjects:
+            f = pool.submit(executor_simulate_single_subject, n, exec_env, g)
+            future2subj[f] = n
+            futures.append(f)
+
+        print(f"EXECUTOR --- WAITING for {len(futures)} futures to finish")
+
+        subjects = []
+        for future in as_completed(futures):
+            try:
+                n, result = future.result()
+                results.append((n, result))
+                print(f"EXECUTOR --- FINISHED subject {n}")
+            except Exception as exc:
+                print(f"EXECUTOR --- FAIL subject {n}. Restarting pool.")
+                pool.shutdown(wait=False)
+                finished = [n for n, _ in results]
+                subjects = [n for n in subjects if n not in finished]
+                break
+
+    simulated_bolds = {}
+    for n, r in results:
+        simulated_bolds[n] = r
+    
+
+    sim_measures = process_bold_signals(simulated_bolds, exec_env)
+    sim_measures['g'] = g
+    processed = exec_env['processed']
+    
+    observables = exec_env['observables']
+    for ds in observables:
+        sim_measures[f'dist_{ds}'] = observables[ds].compute_distance(sim_measures[ds], processed[ds])
+
+    hdf.savemat(out_file, sim_measures)
+
+
 def run(args):
 
     # This is the data related to the dataset that we are going to load.
@@ -347,7 +408,10 @@ def run(args):
 
     # Time resolution parameter of the fMRI data (seconds). Each dataset will have its own tr value
     # depending on the scanner setting used to capture the BOLD signal
-    tr = args.tr
+    if args.tr is None:
+        raise RuntimeError("Please provide the --tr parameter with the time resolution of the fMRI scanner (milliseconds)")
+    else:
+        tr = args.tr
     # We will discard the first t_min seconds of the simulation
     t_min = 10.0 * tr / 1000.0
 
@@ -414,7 +478,7 @@ def run(args):
 
     all_fMRI = {s: d for s, d in enumerate(timeseries)}
 
-    out_file_path = args.out_path
+    out_file_path = os.path.join(args.out_path, f"sim_{args.model}_{'bpf' if bpf else 'nobpf'}")    
     if not os.path.exists(out_file_path):
         os.makedirs(out_file_path)
 
@@ -422,14 +486,37 @@ def run(args):
     emp_filename = os.path.join(out_file_path, 'fNeuro_emp.mat')
     if not os.path.exists(emp_filename):
         processed = process_empirical_subjects(all_fMRI, observables)
-        hdf.savemat(emp_filename, processed)
+        hdf.savemat(emp_filename, processed, prev_73=True)
     else:
         processed = {observable_name: load_2d_matrix(emp_filename, index=observable_name) for observable_name in observables.keys()}
 
     out_file_name_pattern = os.path.join(out_file_path, 'fitting_g{}.mat')
 
     n_subj = args.nsubj if args.nsubj is not None else n_frmis
-    if args.g is not None:
+
+    if args.plot_g:
+        # Show distances for all G files generated
+        file_list = glob.glob(os.path.join(out_file_path, 'fitting_g*.mat'))
+        y = {}
+        for o_name in observables.keys():
+            y[o_name] = []
+        x = []
+        for f in sorted(file_list):
+            m = hdf.loadmat(f)
+            g = m['g']
+            for o_name in y.keys():
+                d = m[f'dist_{o_name}']
+                print(f"Distance for g={g} and observable {o_name} = {d}", flush=True)
+                y[o_name].append(d)
+            x.append(g)
+
+        for o_name, ys in y.items():
+            fig, ax = plt.subplots()
+            ax.plot(x, ys)
+            ax.set_title(f"Distance for observable {o_name}")
+            plt.savefig(os.path.join(out_file_path, f"fig_g_optim_{o_name}.png"), dpi=300)
+
+    elif args.g is not None and not args.use_mp:
         # Single point execution for debugging purposes
         compute_g({
             'verbose':True,
@@ -449,17 +536,42 @@ def run(args):
             'sampling_period': sampling_period,
             'force_recomputations': False,
         }, args.g)
+
+    elif args.g is not None and args.use_mp:
+        compute_g_mp({
+            'verbose': True,
+            'model': copy.deepcopy(model),
+            'integrator': copy.deepcopy(integrator),
+            'weights': sc_norm,
+            'processed': processed,
+            'tr': tr,
+            'observables': copy.deepcopy(observables),
+            'obs_var': obs_var,
+            'bold': bold,
+            'bold_model': BoldStephan2008().configure(),
+            'out_file': out_file_name_pattern.format(np.round(args.g, decimals=3)),
+            'num_subjects': n_subj,
+            't_max_neuronal': t_max_neuronal,
+            't_warmup': t_warmup,
+            'sampling_period': sampling_period
+        }, args.g, args.nproc)
+
     elif args.g_range is not None:
         [g_Start, g_End, g_Step] = args.g_range
         gs = np.arange(g_Start, g_End + g_Step, g_Step)
 
         results = []
-        while len(gs) > 0:
+        remaining_gs = list(gs)
+        finished_gs = []
+        
+        while len(remaining_gs) > 0:
             print(f'Creating process pool with {args.nproc} workers')
             pool = ProcessPoolExecutor(max_workers=args.nproc)
             futures = []
-            print(f"EXECUTOR --- START cycle for {len(gs)} gs")
-            for g in gs:
+            future_to_g = {}
+            
+            print(f"EXECUTOR --- START cycle for {len(remaining_gs)} gs")
+            for gf in remaining_gs:
                 exec_env = {
                     'verbose': True,
                     'model': copy.deepcopy(model),
@@ -471,41 +583,31 @@ def run(args):
                     'obs_var': obs_var,
                     'bold': bold,
                     'bold_model': BoldStephan2008().configure(),
-                    'out_file': out_file_name_pattern.format(np.round(g, decimals=3)),
+                    'out_file': out_file_name_pattern.format(np.round(gf, decimals=3)),
                     'num_subjects': n_subj,
                     't_max_neuronal': t_max_neuronal,
                     't_warmup': t_warmup,
                     'sampling_period': sampling_period
                 }
-                futures.append((g, pool.submit(compute_g, exec_env, g)))
+                future = pool.submit(compute_g, exec_env, gf)
+                future_to_g[future] = gf
+                futures.append(future)
 
-            while any([not f.done() for _, f in futures]):
-                time.sleep(5)
-
-            gs = []
-            for g, f in futures:
+            print(f"EXECUTOR --- WAITING for {len(futures)} futures to finish")
+            
+            remaining_gs = []
+            for future in as_completed(futures):
+                gf = future_to_g[future]
                 try:
-                    result = f.result()
+                    result = future.result()
                     results.append(result)
-                    print(f"EXECUTOR --- FINISHED process for g={g}")
+                    finished_gs.append(gf)
+                    print(f"EXECUTOR --- FINISHED process for g={gf}")
                 except Exception as exc:
-                    f.cancel()
-                    print(f"EXECUTOR --- FAIL. Restarting process for g={g}")
-                    gs.append(g)
+                    print(f"EXECUTOR --- FAIL computation for g={gf}. Error: {exc}")
+                    remaining_gs = [g for g in gs if g not in finished_gs]
 
-            pool.shutdown(wait=False,cancel_futures=True)
-
-        # fig, ax = plt.subplots()
-        # rs = sorted(results, key=lambda r: r['g'])
-        # g = [r['g'] for r in rs]
-        # data = [r[observable_name] for r in rs]
-
-        # ax.plot(g, data)
-
-        # ax.set(xlabel=f'G (global coupling) for model {args.model}', ylabel=observable_name,
-        #        title='Global coupling fitting')
-
-        # plt.savefig(os.path.join(out_file_path, f'fitting_{args.model}_{observable_name}.png'), dpi=300)
+            pool.shutdown(wait=False, cancel_futures=True)
 
     else:
         RuntimeError("Neither --g not --g-range has been defined")
@@ -515,6 +617,7 @@ def gen_arg_parser():
     parser = argparse.ArgumentParser(description="Global coupling fitting script for NeuroNumba models.")
     parser.add_argument("--full-scan", action='store_true', default=False, help="Full scan all models/observables/measures")
     parser.add_argument("--verbose", action='store_true', default=False, help="Prints extra information during execution")
+    parser.add_argument("--use-mp", action='store_true', default=False, help="Use multiprocessing if possible")
     parser.add_argument("--nproc", type=int, default=10, help="Number of parallel processes")
     parser.add_argument("--nsubj", type=int, help="Number of subjects for the simulations")
     parser.add_argument("--g", type=float, help="Single point execution for a global coupling value")
@@ -524,10 +627,11 @@ def gen_arg_parser():
     parser.add_argument("--observables", nargs='+', type=str, required=True, help="Observables to use (FC, phFCD, swFCD)")
     parser.add_argument("--measure", type=str, default='PS', help="Measure to use (PearsonSimilarity (PS), KolmogorovStatistic (KS))")
     parser.add_argument("--out-path", type=str, required=True, help="Path to folder for output results")
-    parser.add_argument("--tr", type=float, required=True, help="Time resolution of fMRI scanner (seconds)")
+    parser.add_argument("--tr", type=float, help="Time resolution of fMRI scanner (seconds)")
     parser.add_argument("--sc-scaling", type=float, default=0.2, help="Scaling factor for the SC matrix")
     parser.add_argument("--tmax", type=float, required=False, help="Override simulation time (seconds)")
     parser.add_argument("--fmri-path", type=str, help="Path to fMRI timeseries data")
+    parser.add_argument("--plot-g", action='store_true', default=False, help="Plot G optimization results")
 
     return parser
 
