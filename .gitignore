@@ -1,4 +1,9 @@
 **/.idea
+.env
+*code-workspace
+.vscode/settings.json
+*.pyc
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

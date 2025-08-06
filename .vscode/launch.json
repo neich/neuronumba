@@ -5,7 +5,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "GC Model",
+            "name": "GC: g range",
             "type": "debugpy",
             "request": "launch",
             "cwd": "${fileDirname}${pathSeparator}..${pathSeparator}examples",
@@ -13,19 +13,18 @@
             "console": "integratedTerminal",
             "env": {"PYTHONPATH": "..${pathSeparator}src"},
             "args": [
-                "--nsubj", "15",
+                "--nsubj", "24",
                 "--observables", "swFCD", "FC", "phFCD",
-                "--nproc", "32", 
                 "--model", "Deco2014", 
-                "--g-range", "0.25", "15", "0.25",
+                "--g-range", "0.25", "9", "0.25",
                 "--tr", "720",
                 "--tmax", "600",
                 "--fmri-path", "./Data_Raw/ebrains_popovych",
-                "--out-path", "./Data_Produced/ebrains_popovych/test_Deco2014"
+                "--out-path", "./Data_Produced/ebrains_popovych"
             ]
         },
         {
-            "name": "GC Single G",
+            "name": "GC: single g",
             "type": "debugpy",
             "request": "launch",
             "cwd": "${workspaceFolder}${pathSeparator}examples",
@@ -34,30 +33,51 @@
             "env": {"PYTHONPATH": "..${pathSeparator}src"},
             "args": [
                 "--nsubj", "15",
+                "--model", "Deco2014",
                 "--observables", "swFCD", "FC", "phFCD",
-                "--model", "Zerlaut2O", 
                 "--g", "5.05",
                 "--tr", "720",
                 "--tmax", "600",
                 "--fmri-path", "./Data_Raw/ebrains_popovych",
-                "--out-path", "./Data_Produced/ebrains_popovych/test_z2o"
+                "--out-path", "./Data_Produced/ebrains_popovych"
             ]
         },
         {
-            "name": "Gen BOLD",
+            "name": "GC: single g with MP",
             "type": "debugpy",
             "request": "launch",
             "cwd": "${fileDirname}${pathSeparator}..${pathSeparator}examples",
-            "program": ".${pathSeparator}gen_bold.py",
+            "program": ".${pathSeparator}global_coupling_fitting.py",
             "console": "integratedTerminal",
             "env": {"PYTHONPATH": "..${pathSeparator}src"},
             "args": [
-                "--model", "Deco2014", 
+                "--model", "Deco2014",
+                "--nsubj", "24",
+                "--observables", "swFCD", "FC", "phFCD",
                 "--g", "1.05",
                 "--tr", "720",
                 "--tmax", "600",
-                "--sc-matrix", "./Data_Raw/ebrains_popovych/000/Counts.csv",
-                "--out-path", "./Data_Produced/ebrains_popovych/sim_Deco2014"
+                "--fmri-path", "./Data_Raw/ebrains_popovych",
+                "--out-path", "./Data_Produced/ebrains_popovych",
+                "--use-mp",
+                "--nproc", "24"
+            ]
+        },
+        {
+            "name": "GC: plot G results",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${fileDirname}${pathSeparator}..${pathSeparator}examples",
+            "program": ".${pathSeparator}global_coupling_fitting.py",
+            "console": "integratedTerminal",
+            "env": {"PYTHONPATH": "..${pathSeparator}src"},
+            "args": [
+                "--plot-g",
+                "--model", "Deco2014",
+                "--tr", "720",
+                "--observables", "swFCD", "FC", "phFCD",
+                "--fmri-path", "./Data_Raw/ebrains_popovych",
+                "--out-path", "./Data_Produced/ebrains_popovych"
             ]
         }
     ]
