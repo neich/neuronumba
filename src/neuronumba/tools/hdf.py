@@ -17,9 +17,13 @@ def loadmat(filename):
         return sio.loadmat(filename)
 
 
-def savemat(filename, data):
-    f = h5py.File(filename, 'w')
-    for k, v in data.items():
-        f.create_dataset(k, data=v)
-    f.close()
+def savemat(filename, data, prev_73=False):
+    if prev_73:
+        # Use scipy.io.savemat for compatibility with older versions
+        sio.savemat(filename, data)
+    else:
+        f = h5py.File(filename, 'w')
+        for k, v in data.items():
+            f.create_dataset(k, data=v)
+        f.close()
 
