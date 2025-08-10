@@ -53,8 +53,6 @@ class Montbrio(LinearCouplingModel):
     # External inputs and coupling strengths
     I_e_ext = Attr(default=0.0, attributes=Model.Type.Model)
     I_i_ext = Attr(default=0.0, attributes=Model.Type.Model)
-    J_e = Attr(default=1.0, attributes=Model.Type.Model)
-    J_i = Attr(default=0.0, attributes=Model.Type.Model)
     J_A = Attr(default=1.0, attributes=Model.Type.Model)
     J_ee = Attr(default=10.0, attributes=Model.Type.Model)
     J_ei = Attr(default=10.0, attributes=Model.Type.Model)

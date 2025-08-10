@@ -105,20 +105,119 @@ def create_observable_config(observable_name, distance_measure, band_pass_filter
     
     Args:
         observable_name: Name of the observable ('FC', 'phFCD', 'swFCD')
-        distance_measure: Distance measure instance
+        distance_measure: Distance measure name (PS or KS)
         band_pass_filter: Optional band-pass filter
         
     Returns:
         ObservableConfig instance
     """
+    measure = PearsonSimilarity() if distance_measure == 'PS' else KolmogorovSmirnovStatistic()
     if observable_name == 'FC':
-        return ObservableConfig(FC(), AveragingAccumulator(), distance_measure, band_pass_filter)
+        return ObservableConfig(FC(), AveragingAccumulator(), measure, band_pass_filter)
     elif observable_name == 'phFCD':
-        return ObservableConfig(PhFCD(), ConcatenatingAccumulator(), distance_measure, band_pass_filter)
+        return ObservableConfig(PhFCD(), ConcatenatingAccumulator(), measure, band_pass_filter)
     elif observable_name == 'swFCD':
-        return ObservableConfig(SwFCD(), ConcatenatingAccumulator(), distance_measure, band_pass_filter)
+        return ObservableConfig(SwFCD(), ConcatenatingAccumulator(), measure, band_pass_filter)
     else:
         raise RuntimeError(f"Observable <{observable_name}> not supported!")
+
+
+def create_observables_dict(observables, bpf):
+    obs_dict = {}
+    for item in observables:
+        o, d = item.split(",")
+        obs_dict[o] = create_observable_config(o, d, bpf)
+    return obs_dict
+
+
+class ModelFactory:
+    _creators = {
+        'Montbrio': lambda: Montbrio(),
+        'Deco2014': lambda: Deco2014(),
+        'Zerlaut2O': lambda: ZerlautAdaptationSecondOrder(),
+        'Hopf': lambda: Hopf()
+    }
+
+    @staticmethod
+    def create_model(model_name):
+        if model_name not in ModelFactory._creators:
+            raise ValueError(f"Unknown model name: {model_name}")
+        return ModelFactory._creators[model_name]()
+
+    @staticmethod
+    def list_available_models():
+        return list(ModelFactory._creators.keys())
+    
+    @staticmethod
+    def add_model(model_name, creator):
+        ModelFactory._creators[model_name] = creator
+
+
+class IntegratorFactory:
+    """Factory for creating integrators with appropriate noise configurations for different models."""
+    
+    _configurations = {
+        'Hopf': lambda dt: EulerStochastic(dt=dt, sigmas=np.r_[1e-2, 1e-2]),
+        'Deco2014': lambda dt: EulerStochastic(dt=dt, sigmas=np.r_[1e-3, 1e-3]),
+        'Montbrio': lambda dt: EulerStochastic(dt=dt, sigmas=np.r_[0.0, 0.0, 0.0, 0.0, 1e-3, 1e-3]),
+        'Zerlaut2O': lambda dt: EulerStochastic(dt=dt, sigmas=np.r_[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1e-3]),
+    }
+    
+    @staticmethod
+    def create_integrator(model_name, dt):
+        """
+        Create an integrator appropriate for the given model.
+        
+        Args:
+            model_name: Name of the model ('Hopf', 'Deco2014', 'Montbrio', 'Zerlaut2O')
+            dt: Integration time step (ms)
+            
+        Returns:
+            Configured integrator instance
+        """
+        if model_name not in IntegratorFactory._configurations:
+            raise ValueError(f"Unknown model name for integrator: {model_name}")
+        return IntegratorFactory._configurations[model_name](dt)
+    
+    @staticmethod
+    def list_available_integrators():
+        """List all available integrator configurations."""
+        return list(IntegratorFactory._configurations.keys())
+    
+    @staticmethod
+    def add_integrator_config(model_name, creator):
+        """
+        Add a new integrator configuration.
+        
+        Args:
+            model_name: Name of the model
+            creator: Function that takes dt and returns an integrator instance
+        """
+        IntegratorFactory._configurations[model_name] = creator
+    
+    @staticmethod
+    def get_sigma_config(model_name):
+        """Get the sigma configuration for a given model (for debugging/inspection)."""
+        if model_name == 'Hopf':
+            return np.r_[1e-2, 1e-2]
+        elif model_name == 'Deco2014':
+            return np.r_[1e-3, 1e-3]
+        elif model_name == 'Montbrio':
+            return np.r_[0.0, 0.0, 0.0, 0.0, 1e-3, 1e-3]
+        elif model_name == 'Zerlaut2O':
+            return np.r_[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1e-3]
+        else:
+            raise ValueError(f"Unknown model name: {model_name}")
+
+
+def load_subject_list(path):
+    subjects = []
+    with open(path, newline='') as csvfile:
+        reader = csv.reader(csvfile, delimiter=' ', quotechar='|')
+        for row in reader:
+            subjects.append(int(row[0]))
+    return subjects
+
 
 
 def load_subject_list(path):
@@ -182,12 +281,12 @@ def load_sc(fmri_path, scale):
 
 
 def simulate(exec_env, g):
-    model = exec_env['model']
+    model = ModelFactory.create_model(exec_env['model']).set_attributes(exec_env['model_attributes'])
     weights = exec_env['weights']
     obs_var = exec_env['obs_var']
     t_max_neuronal = exec_env['t_max_neuronal']
     t_warmup = exec_env['t_warmup']
-    integrator = exec_env['integrator']
+    integrator = IntegratorFactory.create_integrator(exec_env['model'], exec_env['dt'])
     sampling_period = exec_env['sampling_period']
     model.configure(weights=weights, g=g)
     if 'J' in exec_env:
@@ -229,7 +328,7 @@ def process_bold_signals(bold_signals, exec_env):
     num_subjects = len(bold_signals)
     N = bold_signals[next(iter(bold_signals))].shape[1]
 
-    observables = exec_env['observables']
+    observables = create_observables_dict(exec_env['observables'], exec_env.get('bpf', None))
 
     # First, let's create a data structure for the observables operations...
     measureValues = {}
@@ -287,7 +386,7 @@ def compute_g(exec_env, g):
     out_file = exec_env['out_file']
     force_recomputations = False if 'force_recomputations' not in exec_env else exec_env['force_recomputations']
 
-    observables = exec_env['observables']
+    observables = create_observables_dict(exec_env['observables'], exec_env['bpf'])
     processed = exec_env['processed']
 
     if not force_recomputations and os.path.exists(out_file):
@@ -317,6 +416,7 @@ def process_empirical_subjects(bold_signals, observables: dict[str, ObservableCo
 
     # First, let's create a data structure for the observables operations...
     measureValues = {}
+    
     for ds, observable_config in observables.items():
         measureValues[ds] = observable_config.init_accumulator(num_subjects, n_rois)
 
@@ -360,29 +460,30 @@ def compute_g_mp(exec_env, g, nproc):
     subjects = list(range(exec_env['num_subjects']))
     results = []
     print(f'Creating process pool with {nproc} workers')
-    while len(subjects) > 0:
-        print(f"EXECUTOR --- START cycle for {len(subjects)} subjects")
+    pending = subjects
+    while len(pending) > 0:
+        print(f"EXECUTOR --- START cycle for {len(pending)} subjects")
         pool = ProcessPoolExecutor(max_workers=nproc)
         futures = []
         future2subj = {}
-        for n in subjects:
+        for n in pending:
             f = pool.submit(executor_simulate_single_subject, n, exec_env, g)
             future2subj[f] = n
             futures.append(f)
 
         print(f"EXECUTOR --- WAITING for {len(futures)} futures to finish")
 
-        subjects = []
+        pending = []
         for future in as_completed(futures):
             try:
                 n, result = future.result()
                 results.append((n, result))
                 print(f"EXECUTOR --- FINISHED subject {n}")
             except Exception as exc:
-                print(f"EXECUTOR --- FAIL subject {n}. Restarting pool.")
-                pool.shutdown(wait=False)
+                print(f"EXECUTOR --- FAIL subject {n}. Cause: {exc}. Restarting pool.")
+                pool.shutdown(wait=True, cancel_futures=True)
                 finished = [n for n, _ in results]
-                subjects = [n for n in subjects if n not in finished]
+                pending = [n for n in subjects if n not in finished]
                 break
 
     simulated_bolds = {}
@@ -393,8 +494,8 @@ def compute_g_mp(exec_env, g, nproc):
     sim_measures = process_bold_signals(simulated_bolds, exec_env)
     sim_measures['g'] = g
     processed = exec_env['processed']
-    
-    observables = exec_env['observables']
+
+    observables = create_observables_dict(exec_env['observables'], exec_env.get('bpf', None))
     for ds in observables:
         sim_measures[f'dist_{ds}'] = observables[ds].compute_distance(sim_measures[ds], processed[ds])
 
@@ -439,42 +540,14 @@ def run(args):
     sc_norm = load_sc(args.fmri_path, args.sc_scaling)
 
     bold = False
-    if args.model == 'Hopf':
-        # -------------------------- Setup Hopf frequencies
-        bpf = BandPassFilter(k=2, flp=0.008, fhi=0.08, tr=tr, apply_detrend=True, apply_demean=True)
-        f_diff = filterps.filt_pow_spetra_multiple_subjects(timeseries, tr, bpf)
-        omega = 2 * np.pi * f_diff
-        model = Hopf(omega=omega, a=-0.02)
-        integrator = EulerStochastic(dt=dt, sigmas=np.r_[1e-2, 1e-2])
-        obs_var = 'x'
-    elif args.model == 'Deco2014':
-        model = Deco2014()
-        integrator = EulerStochastic(dt=dt, sigmas=np.r_[1e-3, 1e-3])
-        bold = True
-        obs_var = 're'
-    elif args.model == 'Montbrio':
-        model = Montbrio()
-        integrator = EulerStochastic(dt=dt, sigmas=np.r_[0.0, 0.0, 0.0, 0.0, 1e-3, 1e-3])
-        bold = True
-        obs_var = 'r_e'
-    elif args.model == 'Zerlaut2O':
-        model = ZerlautAdaptationSecondOrder()
-        integrator = EulerStochastic(dt=dt, sigmas=np.r_[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1e-3])
-        bold = True
-        obs_var = 'E'
-    else:
-        raise RuntimeError(f"Model <{args.model}> not supported!")
+    if args.model not in ModelFactory.list_available_models():
+        raise ValueError(f"Model <{args.model}> not supported!")
 
-    if args.measure == 'PS':
-        measure = PearsonSimilarity()
-    else:
-        measure = KolmogorovSmirnovStatistic()
-
+    model = ModelFactory.create_model(args.model)
+    if args.obs_var not in model.state_vars and args.obs_var not in model.observable_vars:
+        raise ValueError(f"Observable variable <{args.obs_var}> not found in model!")
+    
     bpf = BandPassFilter(tr=tr, k=args.bpf[0], flp=args.bpf[1], fhi=args.bpf[2]) if args.bpf is not None else None
-
-    observables = {}
-    for observable_name in args.observables:
-        observables[observable_name] = create_observable_config(observable_name, measure, bpf)
 
     all_fMRI = {s: d for s, d in enumerate(timeseries)}
 
@@ -490,7 +563,7 @@ def run(args):
     else:
         processed = {observable_name: load_2d_matrix(emp_filename, index=observable_name) for observable_name in observables.keys()}
 
-    out_file_name_pattern = os.path.join(out_file_path, 'fitting_g{}.mat')
+    out_file_name_pattern = os.path.join(out_file_path, 'fitting_g_{}.mat')
 
     n_subj = args.nsubj if args.nsubj is not None else n_frmis
 
@@ -520,13 +593,13 @@ def run(args):
         # Single point execution for debugging purposes
         compute_g({
             'verbose':True,
-            'model': copy.deepcopy(model),
-            'integrator': copy.deepcopy(integrator),
+            'model': args.model,
+            'dt': dt,
             'weights': sc_norm,
             'processed': processed,
             'tr': tr,
-            'observables': copy.deepcopy(observables),
-            'obs_var': obs_var,
+            'observables': args.observables,
+            'obs_var': args.obs_var,
             'bold': bold,
             'bold_model': BoldStephan2008().configure(),
             'out_file': out_file_name_pattern.format(np.round(args.g, decimals=3)),
@@ -540,13 +613,13 @@ def run(args):
     elif args.g is not None and args.use_mp:
         compute_g_mp({
             'verbose': True,
-            'model': copy.deepcopy(model),
-            'integrator': copy.deepcopy(integrator),
+            'model': args.model,
+            'dt': dt,
             'weights': sc_norm,
             'processed': processed,
             'tr': tr,
-            'observables': copy.deepcopy(observables),
-            'obs_var': obs_var,
+            'observables': args.observables,
+            'obs_var': args.obs_var,
             'bold': bold,
             'bold_model': BoldStephan2008().configure(),
             'out_file': out_file_name_pattern.format(np.round(args.g, decimals=3)),
@@ -563,7 +636,7 @@ def run(args):
         results = []
         remaining_gs = list(gs)
         finished_gs = []
-        
+          
         while len(remaining_gs) > 0:
             print(f'Creating process pool with {args.nproc} workers')
             pool = ProcessPoolExecutor(max_workers=args.nproc)
@@ -574,13 +647,13 @@ def run(args):
             for gf in remaining_gs:
                 exec_env = {
                     'verbose': True,
-                    'model': copy.deepcopy(model),
-                    'integrator': copy.deepcopy(integrator),
+                    'model': args.model,
+                    'dt': dt,
                     'weights': sc_norm,
                     'processed': processed,
                     'tr': tr,
-                    'observables': copy.deepcopy(observables),
-                    'obs_var': obs_var,
+                    'observables': args.observables,
+                    'obs_var': args.obs_var,
                     'bold': bold,
                     'bold_model': BoldStephan2008().configure(),
                     'out_file': out_file_name_pattern.format(np.round(gf, decimals=3)),
@@ -609,8 +682,192 @@ def run(args):
 
             pool.shutdown(wait=False, cancel_futures=True)
 
+    elif args.param is not None:
+        # Parameter exploration
+        param_explore = parse_parameter_definitions(args.param)
+        
+        # Create base execution environment
+        base_exec_env = {
+            'verbose': True,
+            'model': args.model,
+            'dt': dt,
+            'weights': sc_norm,
+            'processed': processed,
+            'tr': tr,
+            'observables': args.observables,
+            'obs_var': args.obs_var,
+            'bold': bold,
+            'bold_model': BoldStephan2008().configure(),
+            'num_subjects': n_subj,
+            't_max_neuronal': t_max_neuronal,
+            't_warmup': t_warmup,
+            'sampling_period': sampling_period,
+            'force_recomputations': False,
+        }
+        
+        # Run parameter exploration
+        run_parameter_exploration(param_explore, base_exec_env, out_file_path, args.nproc)
+
     else:
-        RuntimeError("Neither --g not --g-range has been defined")
+        RuntimeError("Neither --g, --g-range, nor --param has been defined")
+
+
+def parse_parameter_definitions(param_args):
+    """
+    Parse parameter definitions from command line arguments.
+    
+    Args:
+        param_args: List of parameter definition arguments
+        
+    Returns:
+        Dictionary mapping parameter names to values/ranges
+    """
+    param_explore = {}
+    
+    for p in param_args:
+        if len(p) < 3:
+            raise RuntimeError(f"Parameter definition <{p}> is not valid. Lack of data")
+        
+        try:
+            param_type = p[0]
+            param_name = p[1]
+            
+            if param_type not in ['single', 'range', 'list']:
+                raise RuntimeError(f"Parameter definition <{p}> is not valid. Unknown parameter type: {param_type}")
+            
+            if param_type == 'single':
+                if len(p) != 3:
+                    raise RuntimeError(f"Parameter definition <{p}> is not valid. Single parameters require a name, type, and value")
+                param_value = float(p[2])
+                param_explore[param_name] = param_value
+                
+            elif param_type == 'range':
+                if len(p) != 5:
+                    raise RuntimeError(f"Parameter definition <{p}> is not valid. Range parameters require a name, type, start, end and step")
+                pv_start, pv_end, pv_step = map(float, p[2:])
+                param_explore[param_name] = np.arange(pv_start, pv_end + pv_step, pv_step)
+                
+            else:  # list
+                if len(p) < 3:
+                    raise RuntimeError(f"Parameter definition <{p}> is not valid. List parameters require a name, type and at least one value")
+                p_values = list(map(float, p[2:]))
+                param_explore[param_name] = p_values
+                
+        except Exception as e:
+            raise RuntimeError(f"Failed to parse parameter {param_name}: {e}")
+    
+    return param_explore
+
+
+def generate_parameter_combinations(param_explore):
+    """
+    Generate all combinations of parameter values.
+    
+    Args:
+        param_explore: Dictionary mapping parameter names to values/ranges
+        
+    Returns:
+        List of parameter combinations as lists of (name, value) tuples
+    """
+    param_names = list(param_explore.keys())
+    param_values = [
+        param_explore[name] if isinstance(param_explore[name], (list, np.ndarray)) 
+        else [param_explore[name]] 
+        for name in param_names
+    ]
+    
+    # Generate all combinations of parameter values
+    param_combinations = list(itertools.product(*param_values))
+    
+    # Convert to list of lists of tuples (parameter name, value)
+    all_param_sets = []
+    for combination in param_combinations:
+        param_set = [(param_names[i], combination[i]) for i in range(len(param_names))]
+        all_param_sets.append(param_set)
+    
+    return all_param_sets
+
+
+def process_model_parameters(param_set):
+    """
+    Process parameter set to separate model parameters from global coupling.
+    
+    Args:
+        param_set: List of (name, value) tuples
+        
+    Returns:
+        Tuple of (model_params_dict, g_value)
+    """
+    model_params_cli = [p for p in param_set if p[0] != 'g']
+    model_params = []
+    
+    for p in model_params_cli:
+        pname = p[0]
+        if '-' not in pname:
+            model_params.append(p)
+        else:
+            # Handle hyphenated parameters by splitting
+            ps = p[0].split('-')
+            for pp in ps:
+                model_params.append((pp, p[1]))
+    
+    g_values = [p[1] for p in param_set if p[0] == 'g']
+    g = g_values[0] if g_values else None
+    
+    return dict(model_params), g
+
+
+def generate_parameter_filename(param_set, prefix='fitting'):
+    """
+    Generate a filename based on parameter values.
+    
+    Args:
+        param_set: List of (name, value) tuples
+        prefix: Filename prefix
+        
+    Returns:
+        Generated filename
+    """
+    fname = prefix
+    for p in param_set:
+        fname += f"_{p[0]}_{np.round(p[1], decimals=2)}"
+    fname += '.mat'
+    return fname
+
+
+def run_parameter_exploration(param_explore, base_exec_env, out_file_path, nproc):
+    """
+    Run parameter exploration with all combinations.
+    
+    Args:
+        param_explore: Dictionary of parameters to explore
+        base_exec_env: Base execution environment
+        out_file_path: Output directory path
+        nproc: Number of processes
+    """
+    all_param_sets = generate_parameter_combinations(param_explore)
+    
+    print(f"Generated {len(all_param_sets)} parameter combinations")
+    
+    for param_set in all_param_sets:
+        print(f"Combination: {param_set}")
+        
+        model_params, g = process_model_parameters(param_set)
+        
+        if g is None:
+            print("Warning: No 'g' parameter found in parameter set, skipping...")
+            continue
+        
+        fname = generate_parameter_filename(param_set)
+        out_file = os.path.join(out_file_path, fname)
+        
+        # Create execution environment with model parameters
+        exec_env = copy.deepcopy(base_exec_env)
+        exec_env['model_attributes'] = model_params
+        exec_env['out_file'] = out_file
+        
+        # Run the computation
+        compute_g_mp(exec_env, g, nproc)
 
 
 def gen_arg_parser():
@@ -624,14 +881,15 @@ def gen_arg_parser():
     parser.add_argument("--g-range", nargs=3, type=float, help="Parameter sweep range for G (start, end, step)")
     parser.add_argument("--bpf", nargs=3, type=float, required=False, help="Band pass filter to apply to BOLD signal (k, lp freq, hp freq)")
     parser.add_argument("--model", type=str, default='Deco2014', help="Model to use (Hopf, Deco2014, Montbrio, Zerlaut1O, Zerlaut2O)")
-    parser.add_argument("--observables", nargs='+', type=str, required=True, help="Observables to use (FC, phFCD, swFCD)")
-    parser.add_argument("--measure", type=str, default='PS', help="Measure to use (PearsonSimilarity (PS), KolmogorovStatistic (KS))")
+    parser.add_argument("--obs-var", type=str, required=True, help="Model variable to observe")
+    parser.add_argument("--observables", nargs='+', type=str, required=True, help="Pairs (comma separated) of observables,distance to use (FC, phFCD, swFCD),(PS, KS)")
     parser.add_argument("--out-path", type=str, required=True, help="Path to folder for output results")
     parser.add_argument("--tr", type=float, help="Time resolution of fMRI scanner (seconds)")
     parser.add_argument("--sc-scaling", type=float, default=0.2, help="Scaling factor for the SC matrix")
     parser.add_argument("--tmax", type=float, required=False, help="Override simulation time (seconds)")
     parser.add_argument("--fmri-path", type=str, help="Path to fMRI timeseries data")
     parser.add_argument("--plot-g", action='store_true', default=False, help="Plot G optimization results")
+    parser.add_argument("--param", action='append', nargs="+", type=str, help="Parameter values to use in the model, e.g. --param single tau_e 10.0 --param range J_ee 5.0 15.0 1.0")
 
     return parser
 
