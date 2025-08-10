@@ -74,19 +74,7 @@ class Model(HasAttr):
                 raise AttributeError(f"Variable <{v}> is not in the state or observable variables list!")
         return result
 
-    # def get_state_sub(self, v_list: list[str] = None):
-    #     v_list = v_list or []
-    #     for v in v_list:
-    #         if v not in self.state_vars:
-    #             raise AttributeError(f"Variable <{v}> is not in the state variables list!")
-    #     return {v: (self.state_vars[v], i) for i, v in enumerate(v_list)}
-    #
-    # def get_observed_sub(self, v_list: list[str] = None):
-    #     v_list = v_list or []
-    #     for v in v_list:
-    #         if v not in self.observable_vars:
-    #             raise AttributeError(f"Variable <{v}> is not in the observed list!")
-    #     return {v: (self.observable_vars[v], i) for i, v in enumerate(v_list)}
+    
 
     def get_numba_coupling(self):
         """
