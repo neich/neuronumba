@@ -108,3 +108,28 @@ class HasAttr(object):
     def _init_dependant_automatic(self):
         pass
 
+    def set_attributes(self, kwargs):
+        cls = type(self)
+        class_attrs = dict(inspect.getmembers(cls, lambda o: isinstance(o, Attr)))
+        # Set values of defined attributes in the arguments
+        for name, value in kwargs.items():
+            if name not in class_attrs:
+                raise AttributeError(f"Attribute <{name}> not found in <{cls.__name__}>!")
+            if class_attrs[name].dependant:
+                raise AttributeError(
+                    f"Attribute <{name}> of class <{cls.__name__}> is dependant and cannot be manually initialized!")
+            setattr(self, name, value)
+            self._defined_attrs[name] = value
+        
+        return self
+
+    def get_attributes(self):
+        attrs = {}
+        cls = type(self)
+        class_attrs = dict(inspect.getmembers(cls, lambda o: isinstance(o, Attr)))
+        # Set values of defined attributes in the arguments
+        for name, value in class_attrs.items():
+            if not class_attrs[name].dependant:
+                attrs[name] = getattr(self, name)
+
+        return attrs
