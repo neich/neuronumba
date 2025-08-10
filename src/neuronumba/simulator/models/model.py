@@ -74,8 +74,6 @@ class Model(HasAttr):
                 raise AttributeError(f"Variable <{v}> is not in the state or observable variables list!")
         return result
 
-    
-
     def get_numba_coupling(self):
         """
         :return: numba function with signature nb.f8[:, :](nb.f8[:, :]) (state) -> coupling
