@@ -39,7 +39,7 @@ class ObservableConfig:
     accumulator, distance measure, and optional band-pass filter.
     """
     
-    def __init__(self, observable, accumulator, distance_measure, band_pass_filter=None):
+    def __init__(self, observable, accumulator, distance_measures, band_pass_filter=None):
         """
         Initialize observable configuration.
         
@@ -51,7 +51,7 @@ class ObservableConfig:
         """
         self.observable = observable
         self.accumulator = accumulator
-        self.distance_measure = distance_measure
+        self.distance_measures = distance_measures
         self.band_pass_filter = band_pass_filter
     
     def init_accumulator(self, num_subjects, n_rois):
@@ -90,16 +90,16 @@ class ObservableConfig:
     
     def compute_distance(self, simulated_data, empirical_data):
         """Compute distance between simulated and empirical data."""
-        return self.distance_measure.distance(simulated_data, empirical_data)
-    
+        return { dname: dist.distance(simulated_data, empirical_data) for dname, dist in self.distance_measures.items() }
+
     def __repr__(self):
         return (f"ObservableConfig(observable={self.observable.__class__.__name__}, "
                 f"accumulator={self.accumulator.__class__.__name__}, "
-                f"distance_measure={self.distance_measure.__class__.__name__}, "
+                f"distance_measures={self.distance_measures.__class__.__name__}, "
                 f"band_pass_filter={self.band_pass_filter.__class__.__name__ if self.band_pass_filter else None})")
 
 
-def create_observable_config(observable_name, distance_measure, band_pass_filter=None):
+def create_observable_config(observable_name, distance_measures, band_pass_filter=None):
     """
     Factory function to create ObservableConfig instances.
     
@@ -111,13 +111,20 @@ def create_observable_config(observable_name, distance_measure, band_pass_filter
     Returns:
         ObservableConfig instance
     """
-    measure = PearsonSimilarity() if distance_measure == 'PS' else KolmogorovSmirnovStatistic()
+    measures = {}
+    for d in distance_measures:
+        if d == 'PS':
+            measures[d] = PearsonSimilarity()
+        elif d == 'KS':
+            measures[d] = KolmogorovSmirnovStatistic()
+        else:
+            raise ValueError(f"Unknown distance measure: {d}")
     if observable_name == 'FC':
-        return ObservableConfig(FC(), AveragingAccumulator(), measure, band_pass_filter)
+        return ObservableConfig(FC(), AveragingAccumulator(), measures, band_pass_filter)
     elif observable_name == 'phFCD':
-        return ObservableConfig(PhFCD(), ConcatenatingAccumulator(), measure, band_pass_filter)
+        return ObservableConfig(PhFCD(), ConcatenatingAccumulator(), measures, band_pass_filter)
     elif observable_name == 'swFCD':
-        return ObservableConfig(SwFCD(), ConcatenatingAccumulator(), measure, band_pass_filter)
+        return ObservableConfig(SwFCD(), ConcatenatingAccumulator(), measures, band_pass_filter)
     else:
         raise RuntimeError(f"Observable <{observable_name}> not supported!")
 
@@ -125,8 +132,8 @@ def create_observable_config(observable_name, distance_measure, band_pass_filter
 def create_observables_dict(observables, bpf):
     obs_dict = {}
     for item in observables:
-        o, d = item.split(",")
-        obs_dict[o] = create_observable_config(o, d, bpf)
+        l = item.split(",")
+        obs_dict[l[0]] = create_observable_config(l[0], l[1:], bpf)
     return obs_dict
 
 
@@ -301,25 +308,11 @@ def simulate(exec_env, g):
 
 
 def simulate_single_subject(exec_env, g):
-    signal = simulate(exec_env, g)
-    bold = exec_env['bold']
+    signal = simulate(exec_env, g) * exec_env.get('scale_signal', 1.0)
     sampling_period = exec_env['sampling_period']
-    if bold:
-        b = exec_env['bold_model']
-        bds = b.compute_bold(signal, sampling_period)
-    else:
-        # Some models like Hopf do not require explicit computation of BOLD signal
-        # BUT, we still have to convert the signal into samples of size tr
-        tr = exec_env['tr']
-        n = int(tr / sampling_period)
-        len = signal.shape[0]
-        tmp1 = np.pad(signal, ((0, n - len % n), (0, 0)),
-                                mode='constant',
-                                constant_values=np.nan)
-        tmp2 = tmp1.reshape(n, int(tmp1.shape[0]/n), -1)
-        bds = np.nanmean(tmp2, axis=0)
-    return bds
-
+    b = exec_env['bold_model']
+    bds = b.compute_bold(signal, sampling_period)
+    return bds, signal
 
 def process_bold_signals(bold_signals, exec_env):
     # Process the BOLD signals
@@ -366,16 +359,20 @@ def eval_one_param(exec_env, g):
             hdf.savemat(J_file_name_pattern, {'J': J})
         exec_env['J'] = J
     simulated_bolds = {}
+    simulated_signals = {}
     num_subjects = exec_env['num_subjects']
     for nsub in range(num_subjects):  # trials. Originally it was 20.
         print(f"   Simulating g={g} -> subject {nsub}/{num_subjects}!!!")
-        bds = simulate_single_subject(exec_env, g)
+        bds, signal = simulate_single_subject(exec_env, g)
         while np.isnan(bds).any() or (np.abs(bds) > np.inf).any():  # This is certainly dangerous, we can have an infinite loop... let's hope not! ;-)
             raise RuntimeError(f"Numeric error computing subject {nsub}/{num_subjects} for g={g}")
         simulated_bolds[nsub] = bds
+        simulated_signals[nsub] = signal
         gc.collect()
 
     dist = process_bold_signals(simulated_bolds, exec_env)
+    for n, s in simulated_signals.items():
+        dist[f"signal_{n}"] = s
     # now, add {label: currValue} to the dist dictionary, so this info is in the saved file (if using the decorator @loadOrCompute)
     dist['g'] = g
 
@@ -396,12 +393,12 @@ def compute_g(exec_env, g):
         print(f"Starting computation for g={g}")
         sim_measures = eval_one_param(exec_env, g)
         sim_measures['g'] = g  # Add the g value to the result
-        for ds in observables:
-            sim_measures[f'dist_{ds}'] = observables[ds].compute_distance(sim_measures[ds], processed[ds])
+        compute_observables_distances(sim_measures, processed, observables)
         hdf.savemat(out_file, sim_measures)
 
     for ds in observables:
-        print(f" {ds} for g={g}: {sim_measures[f'dist_{ds}']};", end='', flush=True)
+        for dname in observables[ds].distance_measures:
+            print(f" {ds} for g={g}: {sim_measures[f'dist_{ds}_{dname}']};", end='', flush=True)
 
     return sim_measures
 
@@ -487,19 +484,32 @@ def compute_g_mp(exec_env, g, nproc):
                 break
 
     simulated_bolds = {}
+    numerical_error = False
     for n, r in results:
-        simulated_bolds[n] = r
-    
+        simulated_bolds[n] = r[0]
+        if np.any(np.isnan(simulated_bolds[n])) or np.any(np.isinf(simulated_bolds[n])):
+            numerical_error = True
 
-    sim_measures = process_bold_signals(simulated_bolds, exec_env)
-    sim_measures['g'] = g
-    processed = exec_env['processed']
+    if numerical_error:
+        sim_measures = {"error": "Nan or Inf in bold signals"}
+        print(f"EXECUTOR --- NUMERICAL ERROR for {out_file}")
+    else:
+        sim_measures = process_bold_signals(simulated_bolds, exec_env)
+        sim_measures['g'] = g
+        n, r = results[0] 
+        sim_measures[f'bold_{n}'] = r[0]
+        sim_measures[f'signal_{n}'] = r[1][::100, :]
+        processed = exec_env['processed']
 
-    observables = create_observables_dict(exec_env['observables'], exec_env.get('bpf', None))
-    for ds in observables:
-        sim_measures[f'dist_{ds}'] = observables[ds].compute_distance(sim_measures[ds], processed[ds])
+        observables = create_observables_dict(exec_env['observables'], exec_env.get('bpf', None))
+        compute_observables_distances(sim_measures, processed, observables)
 
     hdf.savemat(out_file, sim_measures)
+
+def compute_observables_distances(sim_measures, processed, observables):
+    for ds in observables:
+        for dname, dist in observables[ds].distance_measures.items():
+            sim_measures[f'dist_{ds}_{dname}'] = dist.distance(sim_measures[ds], processed[ds])
 
 
 def run(args):
@@ -539,7 +549,7 @@ def run(args):
     # Load structural connectivity matrix. In our case, we average all the SC matrices of all subjects
     sc_norm = load_sc(args.fmri_path, args.sc_scaling)
 
-    bold = False
+    bold = True
     if args.model not in ModelFactory.list_available_models():
         raise ValueError(f"Model <{args.model}> not supported!")
 
@@ -703,6 +713,7 @@ def run(args):
             't_warmup': t_warmup,
             'sampling_period': sampling_period,
             'force_recomputations': False,
+            "scale_signal": args.scale_signal
         }
         
         # Run parameter exploration
@@ -861,6 +872,10 @@ def run_parameter_exploration(param_explore, base_exec_env, out_file_path, nproc
         fname = generate_parameter_filename(param_set)
         out_file = os.path.join(out_file_path, fname)
         
+        if not base_exec_env['force_recomputations'] and os.path.exists(out_file):
+            print(f"File {out_file} already exists, skipping...")
+            continue
+
         # Create execution environment with model parameters
         exec_env = copy.deepcopy(base_exec_env)
         exec_env['model_attributes'] = model_params
@@ -886,6 +901,7 @@ def gen_arg_parser():
     parser.add_argument("--out-path", type=str, required=True, help="Path to folder for output results")
     parser.add_argument("--tr", type=float, help="Time resolution of fMRI scanner (seconds)")
     parser.add_argument("--sc-scaling", type=float, default=0.2, help="Scaling factor for the SC matrix")
+    parser.add_argument("--scale-signal", type=float, default=1.0, help="Scaling signal factor for unit conversion")
     parser.add_argument("--tmax", type=float, required=False, help="Override simulation time (seconds)")
     parser.add_argument("--fmri-path", type=str, help="Path to fMRI timeseries data")
     parser.add_argument("--plot-g", action='store_true', default=False, help="Plot G optimization results")
