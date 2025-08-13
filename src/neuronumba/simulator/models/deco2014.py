@@ -75,7 +75,7 @@ class Deco2014(LinearCouplingModel):
     # ==========================================================================
     
     # Automatic FIC computation
-    auto_fic = Attr(default=False, attributes=Model.Type.Model,
+    auto_fic = Attr(default=True, attributes=Model.Type.Model,
                    doc="Whether to automatically compute inhibitory coupling strength J using FIC")
     
     # Time constants (ms)
