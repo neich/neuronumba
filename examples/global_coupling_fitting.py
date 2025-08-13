@@ -312,7 +312,7 @@ def simulate_single_subject(exec_env, g):
     sampling_period = exec_env['sampling_period']
     b = exec_env['bold_model']
     bds = b.compute_bold(signal, sampling_period)
-    return bds, signal
+    return bds
 
 def process_bold_signals(bold_signals, exec_env):
     # Process the BOLD signals
@@ -359,20 +359,16 @@ def eval_one_param(exec_env, g):
             hdf.savemat(J_file_name_pattern, {'J': J})
         exec_env['J'] = J
     simulated_bolds = {}
-    simulated_signals = {}
     num_subjects = exec_env['num_subjects']
     for nsub in range(num_subjects):  # trials. Originally it was 20.
         print(f"   Simulating g={g} -> subject {nsub}/{num_subjects}!!!")
-        bds, signal = simulate_single_subject(exec_env, g)
+        bds = simulate_single_subject(exec_env, g)
         while np.isnan(bds).any() or (np.abs(bds) > np.inf).any():  # This is certainly dangerous, we can have an infinite loop... let's hope not! ;-)
             raise RuntimeError(f"Numeric error computing subject {nsub}/{num_subjects} for g={g}")
         simulated_bolds[nsub] = bds
-        simulated_signals[nsub] = signal
         gc.collect()
 
     dist = process_bold_signals(simulated_bolds, exec_env)
-    for n, s in simulated_signals.items():
-        dist[f"signal_{n}"] = s
     # now, add {label: currValue} to the dist dictionary, so this info is in the saved file (if using the decorator @loadOrCompute)
     dist['g'] = g
 
@@ -444,15 +440,38 @@ def executor_simulate_single_subject(n, exec_env, g):
         print(f"Error simulating subject {n}: {e}", file=sys.stderr)
         raise
 
+def executor_simulate_single_subject_raw(n, exec_env, g):
+    try:
+        return n, simulate(exec_env, g)
+    except Exception as e:
+        print(f"Error simulating subject {n}: {e}", file=sys.stderr)
+        raise
 
-def compute_g_mp(exec_env, g, nproc):
+
+def execute_multiprocessing_simulation(exec_env, g, nproc, executor_func=None, result_key='simulated_data'):
+    """
+    Execute simulation for multiple subjects using multiprocessing.
+    
+    Args:
+        exec_env: Execution environment dictionary
+        g: Global coupling parameter
+        nproc: Number of processes
+        executor_func: Function to execute for each subject (default: executor_simulate_single_subject)
+        result_key: Key name for the returned results dictionary (default: 'simulated_data')
+        
+    Returns:
+        Tuple of (simulated_results, numerical_error)
+    """
+    if executor_func is None:
+        executor_func = executor_simulate_single_subject
+        
     out_file = exec_env['out_file']
 
     if os.path.exists(out_file):
         print(f"File {out_file} already exists, skipping...")
-        return    
+        return {}, False
 
-    print(f'Computing distance for G={g}', flush=True)
+    print(f'Computing executor for G={g}', flush=True)
 
     subjects = list(range(exec_env['num_subjects']))
     results = []
@@ -464,7 +483,7 @@ def compute_g_mp(exec_env, g, nproc):
         futures = []
         future2subj = {}
         for n in pending:
-            f = pool.submit(executor_simulate_single_subject, n, exec_env, g)
+            f = pool.submit(executor_func, n, exec_env, g)
             future2subj[f] = n
             futures.append(f)
 
@@ -483,12 +502,54 @@ def compute_g_mp(exec_env, g, nproc):
                 pending = [n for n in subjects if n not in finished]
                 break
 
-    simulated_bolds = {}
+    simulated_results = {}
     numerical_error = False
     for n, r in results:
-        simulated_bolds[n] = r[0]
-        if np.any(np.isnan(simulated_bolds[n])) or np.any(np.isinf(simulated_bolds[n])):
+        simulated_results[n] = r
+        if np.any(np.isnan(simulated_results[n])) or np.any(np.isinf(simulated_results[n])):
             numerical_error = True
+    
+    return simulated_results, numerical_error
+
+
+def execute_multiprocessing_simulation_bold(exec_env, g, nproc):
+    """
+    Execute BOLD simulation for multiple subjects using multiprocessing.
+    
+    Args:
+        exec_env: Execution environment dictionary
+        g: Global coupling parameter
+        nproc: Number of processes
+        
+    Returns:
+        Tuple of (simulated_bolds, numerical_error)
+    """
+    return execute_multiprocessing_simulation(exec_env, g, nproc, 
+                                            executor_simulate_single_subject, 
+                                            'simulated_bolds')
+
+
+def execute_multiprocessing_simulation_raw(exec_env, g, nproc):
+    """
+    Execute raw signal simulation for multiple subjects using multiprocessing.
+    
+    Args:
+        exec_env: Execution environment dictionary
+        g: Global coupling parameter
+        nproc: Number of processes
+        
+    Returns:
+        Tuple of (simulated_signals, numerical_error)
+    """
+    return execute_multiprocessing_simulation(exec_env, g, nproc, 
+                                            executor_simulate_single_subject_raw, 
+                                            'simulated_signals')
+
+
+def compute_g_mp(exec_env, g, nproc):
+    out_file = exec_env['out_file']
+    
+    simulated_bolds, numerical_error = execute_multiprocessing_simulation_bold(exec_env, g, nproc)
 
     if numerical_error:
         sim_measures = {"error": "Nan or Inf in bold signals"}
@@ -496,9 +557,6 @@ def compute_g_mp(exec_env, g, nproc):
     else:
         sim_measures = process_bold_signals(simulated_bolds, exec_env)
         sim_measures['g'] = g
-        n, r = results[0] 
-        sim_measures[f'bold_{n}'] = r[0]
-        sim_measures[f'signal_{n}'] = r[1][::100, :]
         processed = exec_env['processed']
 
         observables = create_observables_dict(exec_env['observables'], exec_env.get('bpf', None))
@@ -506,10 +564,11 @@ def compute_g_mp(exec_env, g, nproc):
 
     hdf.savemat(out_file, sim_measures)
 
+
 def compute_observables_distances(sim_measures, processed, observables):
     for ds in observables:
         for dname, dist in observables[ds].distance_measures.items():
-            sim_measures[f'dist_{ds}_{dname}'] = dist.distance(sim_measures[ds], processed[ds])
+            sim_measures[f'dist_{ds}_{dname}'] = dist.compute_distance(sim_measures[ds], processed[ds])
 
 
 def run(args):
@@ -567,9 +626,10 @@ def run(args):
 
     # Process (or load) empirical data
     emp_filename = os.path.join(out_file_path, 'fNeuro_emp.mat')
+    observables = create_observables_dict(args.observables, bpf)
     if not os.path.exists(emp_filename):
         processed = process_empirical_subjects(all_fMRI, observables)
-        hdf.savemat(emp_filename, processed, prev_73=True)
+        hdf.savemat(emp_filename, processed)
     else:
         processed = {observable_name: load_2d_matrix(emp_filename, index=observable_name) for observable_name in observables.keys()}
 
