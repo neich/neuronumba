@@ -24,6 +24,6 @@ def savemat(filename, data, prev_73=False):
     else:
         f = h5py.File(filename, 'w')
         for k, v in data.items():
-            f.create_dataset(k, data=v)
+            f.create_dataset(str(k), data=v)
         f.close()
 

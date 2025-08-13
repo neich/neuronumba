@@ -5,7 +5,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "GC: g range",
+            "name": "GC: g explore",
             "type": "debugpy",
             "request": "launch",
             "cwd": "${fileDirname}${pathSeparator}..${pathSeparator}examples",
@@ -14,53 +14,13 @@
             "env": {"PYTHONPATH": "..${pathSeparator}src"},
             "args": [
                 "--nsubj", "24",
-                "--observables", "swFCD", "FC", "phFCD",
-                "--model", "Deco2014", 
-                "--g-range", "0.25", "9", "0.25",
+                "--observables", "FC,KS,PS",
+                "--model", "Deco2014", "--obs-var", "re", "--scale-signal", "1000.0",
+                "--param", "list", "g", "1.0", "2.0", "4.0", "8.0",
                 "--tr", "720",
                 "--tmax", "600",
                 "--fmri-path", "./Data_Raw/ebrains_popovych",
                 "--out-path", "./Data_Produced/ebrains_popovych"
-            ]
-        },
-        {
-            "name": "GC: single g",
-            "type": "debugpy",
-            "request": "launch",
-            "cwd": "${workspaceFolder}${pathSeparator}examples",
-            "program": ".${pathSeparator}global_coupling_fitting.py",
-            "console": "integratedTerminal",
-            "env": {"PYTHONPATH": "..${pathSeparator}src"},
-            "args": [
-                "--nsubj", "15",
-                "--model", "Deco2014",
-                "--observables", "swFCD", "FC", "phFCD",
-                "--g", "5.05",
-                "--tr", "720",
-                "--tmax", "600",
-                "--fmri-path", "./Data_Raw/ebrains_popovych",
-                "--out-path", "./Data_Produced/ebrains_popovych"
-            ]
-        },
-        {
-            "name": "GC: single g with MP",
-            "type": "debugpy",
-            "request": "launch",
-            "cwd": "${fileDirname}${pathSeparator}..${pathSeparator}examples",
-            "program": ".${pathSeparator}global_coupling_fitting.py",
-            "console": "integratedTerminal",
-            "env": {"PYTHONPATH": "..${pathSeparator}src"},
-            "args": [
-                "--model", "Deco2014",
-                "--nsubj", "24",
-                "--observables", "swFCD", "FC", "phFCD",
-                "--g", "1.05",
-                "--tr", "720",
-                "--tmax", "600",
-                "--fmri-path", "./Data_Raw/ebrains_popovych",
-                "--out-path", "./Data_Produced/ebrains_popovych",
-                "--use-mp",
-                "--nproc", "24"
             ]
         },
         {
