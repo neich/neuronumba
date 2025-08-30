@@ -50,7 +50,7 @@ class COV_corr_sim_base(HasAttr):
         raise NotImplementedError()
 
 
-class linear_COV_corr_sim(COV_corr_sim_base):
+class Linear_COV_corr_sim(COV_corr_sim_base):
     def _do_sim(self, SC):
         # Compute the model (linear hopf) for this iteration. We get:
         #   FC_sim: simulated functional connectivity matrix
@@ -76,15 +76,23 @@ class linear_COV_corr_sim(COV_corr_sim_base):
 
 
 class FitGEC(HasAttr):
-    tau = Attr(default=1.0)
+    class NormMethod:
+        MAX = 'MAX'
+        STD = 'STD'
+        STD_NON_ZERO = 'STD_NON_ZERO'
+
+    # tau = Attr(default=1.0)
     g = Attr(default=1.0)
     max_iters = Attr(default=10000)
     convergence_epsilon = Attr(default=1e-5)
     convergence_test_iters = Attr(default=100)
-    sigma = Attr(default=0.1)
+    # sigma = Attr(default=0.1)
     eps_fc = Attr(default=0.0004)
     eps_cov = Attr(default=0.0001)
     simulator = Attr(default=None)
+
+    norm_method = Attr(default=NormMethod.MAX)
+    norm_scaling = Attr(default=0.2)
 
     # Some debug variable members from last run
     last_run_num_of_iters = 0
@@ -139,8 +147,32 @@ class FitGEC(HasAttr):
             f"***************************************************************************"
         )
 
-    @staticmethod
+    def _norm_EC(
+        self,
+        EC: np.ndarray
+    ) -> np.ndarray:
+        result = np.copy(EC)
+
+        if self.norm_method == FitGEC.NormMethod.MAX:
+            result /= np.max(abs(result))
+            result *= self.norm_scaling
+        elif self.norm_method == FitGEC.NormMethod.STD:
+            result /= np.std(result)
+            result *= self.norm_scaling
+        elif self.norm_method == FitGEC.NormMethod.STD_NON_ZERO:
+            nonzero_mask = result != 0
+            if np.sum(nonzero_mask) == 0:
+                warning.warn("While normalizing EC all values are zero, returning unchanged")
+            else:
+                result /= np.std(results[nonzero_mask])
+                result *= self.norm_scaling
+        else:
+            warning.warn("Unkown scaling method, returning unchanged")
+
+        return result
+
     def _update_EC(
+            self,
             eps_fc: float,
             eps_cov: float,
             FCemp: np.ndarray,
@@ -177,8 +209,9 @@ class FitGEC(HasAttr):
                     SCnew[i, j] = 0
         if only_positive == True:
             SCnew[SCnew < 0] = 0
-        SCnew /= np.max(abs(SCnew))
-        SCnew *= maxC
+        # SCnew /= np.max(abs(SCnew))
+        # SCnew *= maxC
+        SCnew = self._norm_EC(SCnew)
 
         return SCnew
 
@@ -239,7 +272,7 @@ class FitGEC(HasAttr):
             # adjust the arguments eps_fc and eps_cov to change the updating of the
             # weights in the gEC depending on the difference between the empirical and
             # simulated FC and time-lagged covariance
-            newSC = FitGEC._update_EC(eps_fc=self.eps_fc, eps_cov=self.eps_cov, FCemp=FC_emp,
+            newSC = self._update_EC(eps_fc=self.eps_fc, eps_cov=self.eps_cov, FCemp=FC_emp,
                                       FCsim=FC_sim, covemp=scaled_COV_emp,
                                       covsim=scaled_COV_sim, SC=newSC)
 
