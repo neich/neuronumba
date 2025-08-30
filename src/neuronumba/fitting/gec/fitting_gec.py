@@ -24,8 +24,8 @@ from neuronumba.observables.linear.linearfc import LinearFC
 
 
 class COV_corr_sim_base(HasAttr):
-    tr = Attr(default=3.)
-    n_roi = Attr(default=1)
+    tr = Attr(default=3., doc="TR time in seconds")
+    n_roi = Attr(default=1, doc="Number of rois")
     sigma = Attr(default=0.1)
     tau = Attr(default=1.0)
     model = Attr(default=None)
@@ -74,6 +74,47 @@ class Linear_COV_corr_sim(COV_corr_sim_base):
         scaled_COV_sim = sigrat_sim * COV_sim_tau
         return FC_sim, scaled_COV_sim
 
+class Full_COV_corr_sim(COV_corr_sim_base):
+    # dt = Attr(default=0.1, doc="Simulation step delta time in seconds") -> dt goes inside the integrator
+    sampling_period = Attr(default=1.0, doc="Sampling period in seconds")
+    t_max_neuronal = Attr(default=440)
+    t_warmup = Attr(default=100, doc="Warmup iterations")
+    integrator = Attr(doc="Integrator instance")
+    # g = Attr(default=1.0, doc="The g coupling factor") -> Goes inside the model
+
+    def _do_sim(self, SC):
+        obs_var = 'x'
+
+        # Lets simluate the signal
+        self.model.configure(
+            weights=SC
+            # g=self.g
+        )
+        signal = simulate_nodelay(
+            self.model,
+            self.integrator,
+            SC,
+            obs_var,
+            self.sampling_period,
+            self.t_max_neuronal,
+            self.t_warmup
+        )
+
+        # Now we need to convert the signal to samples of size tr
+        n = int(self.tr / self.sampling_period)
+        l = signal.shape[0]
+        tmp1 = np.pad(signal, ((0, n - l % n), (0, 0)),
+                                mode='constant',
+                                constant_values=np.nan)
+        tmp2 = tmp1.reshape(n, int(tmp1.shape[0]/n), -1)
+        bds = np.nanmean(tmp2, axis=0)
+
+        # At this point we have the simulated bold, we can proceed to compute its FC and COV
+        FC_sim = FC().from_fmri(bds)
+        # I guess we can reuse "from_fmri" here for the simulated cov
+        COV_sim = self.from_frmi(bds)
+
+        return FC_sim, COV_sim
 
 class FitGEC(HasAttr):
     class NormMethod:
