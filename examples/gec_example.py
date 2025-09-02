@@ -66,21 +66,23 @@ if __name__ == '__main__':
         # the number of samples generated at each step `generated_simulated_samples` and/or increate
         # the number of averages `average_across_simulations_count`
 
+        # We configure the simulator
+        compact_bold_simulator = CompactHopfSimulator(
+            a = -0.02,
+            omega = h_freq,
+            g = 1.0,
+            sigma = 0.01,
+            dt = 10 # Also in ms
+        )
+
         COV_corr_sim = NonLinear_COV_corr_sim(
             tau = 2,
             n_roi = n_nodes,
             tr = tr, # Remember is in ms
             generated_warmup_samples = 100,
             generated_simulated_samples = 440,
-            average_across_simulations_count = 1.0 # 1 = No averaging
-        )
-        # We configure the simulator
-        COV_corr_sim.compact_bold_simulator = CompactHopfSimulator(
-            a = -0.02,
-            omega = h_freq,
-            g = 1.0,
-            sigma = 0.01,
-            dt = 10 # Also in ms
+            average_across_simulations_count = 1.0, # 1 = No averaging
+            compact_bold_simulator = compact_bold_simulator
         )
     # And the linear hopf
     elif args.model == 'LinearHopf':
