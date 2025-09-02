@@ -16,13 +16,12 @@ from neuronumba.tools.loader import load_2d_matrix
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", help="Model to use (LinearHopf, Hopf)", type=str, default='Hopf')
+    parser.add_argument("--model", help="Model to use (LinearHopf, Hopf)", type=str, default='LinearHopf')
     args = parser.parse_args()
 
     # Lets load some fMRI data for the example
     subj_bolds_raw = {}
-    # fmri_path = "./Data_Raw/ebrains_popovych"
-    fmri_path = "./neuronumba/examples/Data_Raw/ebrains_popovych"
+    fmri_path = "./Data_Raw/ebrains_popovych"
     for path in os.listdir(fmri_path):
         subject_path = os.path.join(fmri_path, path)
         if os.path.isdir(subject_path):
