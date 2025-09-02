@@ -12,17 +12,17 @@ from neuronumba.fitting.gec import FitGEC, Linear_COV_corr_sim, NonLinear_COV_co
 from neuronumba.simulator.models import Hopf
 from neuronumba.observables.linear.linearfc import LinearFC
 from neuronumba.tools.loader import load_2d_matrix
-from neuronumba.simulator.compact_bold_simulator import CompactHopfSimulator
 
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", help="Model to use (LinearHopf, Hopf)", type=str, default='LinearHopf')
+    parser.add_argument("--model", help="Model to use (LinearHopf, Hopf)", type=str, default='Hopf')
     args = parser.parse_args()
 
     # Lets load some fMRI data for the example
     subj_bolds_raw = {}
-    fmri_path = "./Data_Raw/ebrains_popovych"
+    # fmri_path = "./Data_Raw/ebrains_popovych"
+    fmri_path = "./neuronumba/examples/Data_Raw/ebrains_popovych"
     for path in os.listdir(fmri_path):
         subject_path = os.path.join(fmri_path, path)
         if os.path.isdir(subject_path):
@@ -67,12 +67,10 @@ if __name__ == '__main__':
         # the number of averages `average_across_simulations_count`
 
         # We configure the simulator
-        compact_bold_simulator = CompactHopfSimulator(
+        hopf = Hopf(
             a = -0.02,
             omega = h_freq,
             g = 1.0,
-            sigma = 0.01,
-            dt = 10 # Also in ms
         )
 
         COV_corr_sim = NonLinear_COV_corr_sim(
@@ -82,14 +80,18 @@ if __name__ == '__main__':
             generated_warmup_samples = 100,
             generated_simulated_samples = 440,
             average_across_simulations_count = 1.0, # 1 = No averaging
-            compact_bold_simulator = compact_bold_simulator
+            model = hopf,
+            sigma = 0.01,
+            dt = 10 # Also in ms
         )
     # And the linear hopf
     elif args.model == 'LinearHopf':
         # Build model
-        linear_hopf = Hopf()
-        linear_hopf.a = -0.02
-        linear_hopf.omega = h_freq
+        linear_hopf = Hopf(
+            a = -0.02,
+            omega = h_freq,
+            g = 1.0
+        )
 
         COV_corr_sim = Linear_COV_corr_sim(
             tau = 2,

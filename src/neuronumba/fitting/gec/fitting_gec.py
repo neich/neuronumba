@@ -14,6 +14,7 @@ from email.policy import default
 import warnings
 import time
 from typing import Union
+import math
 
 import numpy as np
 from scipy.linalg import expm
@@ -22,7 +23,13 @@ from neuronumba.basic.attr import HasAttr, Attr
 from neuronumba.observables.lagged_cov import TimeLaggedCOV
 from neuronumba.observables.linear.linearfc import LinearFC
 from neuronumba.observables import FC
-from neuronumba.simulator.compact_bold_simulator import CompactHopfSimulator, CompactDeco2014Simulator
+from neuronumba.simulator.models import Hopf, Deco2014, Montbrio
+from neuronumba.bold import BoldStephan2008
+from neuronumba.simulator.monitors import RawSubSample, TemporalAverage
+from neuronumba.simulator.simulator import Simulator
+from neuronumba.simulator.connectivity import Connectivity
+from neuronumba.simulator.history import HistoryNoDelays
+from neuronumba.simulator.integrators import EulerStochastic
 
 class COV_corr_sim_base(HasAttr):
     tr = Attr(default=3000., doc="TR time in milliseconds")
@@ -30,6 +37,8 @@ class COV_corr_sim_base(HasAttr):
     tau = Attr(default=1.0)
     # Time-lagged COVariance observable
     cov_obs = Attr(default=TimeLaggedCOV())
+    model = Attr(default=None)
+    sigma = Attr(default=0.1)
 
     def from_fmri(self, bold_signal):
         # We need two empirical coveriances computed from the timeseries. The non-lag for the computation of the
@@ -50,9 +59,6 @@ class COV_corr_sim_base(HasAttr):
 
 
 class Linear_COV_corr_sim(COV_corr_sim_base):
-    model = Attr(default=None)
-    sigma = Attr(default=0.1)
-
     def _do_sim(self, SC):
         # Compute the model (linear hopf) for this iteration. We get:
         #   FC_sim: simulated functional connectivity matrix
@@ -77,10 +83,83 @@ class Linear_COV_corr_sim(COV_corr_sim_base):
         return FC_sim, scaled_COV_sim
 
 class NonLinear_COV_corr_sim(COV_corr_sim_base):
-    compact_bold_simulator = Attr(required=True, doc="The compact model simulator to generate the bold signal")
+
+    use_temporal_avg_monitor = Attr(default=False, doc="Use the TemporalAverage monitor? Defaults to using the RawSubmonitor")
+    tr = Attr(required=True, doc="Actual TR in milliseconds")
+    dt = Attr(default=0.1, doc="Delta time for the simulation in milliseconds")
     generated_warmup_samples = Attr(required=True, doc="How many samples required to generate for the warmup (this is the number of signal it will be discarded from the final generated signal)")
     generated_simulated_samples = Attr(required=True, doc="How many useful samples to generate for each bold simulation")
     average_across_simulations_count = Attr(default=1, doc="Stochastic generation is noisy, we can average across multiple generations")
+
+    def __gen_bold(self, SC, dt, tr, obs_var, sigmas):
+
+        start_time = time.perf_counter()        
+
+        integrator = EulerStochastic(dt=dt, sigmas=sigmas)
+        con = Connectivity(
+            weights=SC, 
+            lengths=np.random.rand(self.n_roi, self.n_roi)*10.0 + 1.0, 
+            speed=1.0
+        )
+        history = HistoryNoDelays()
+        monitor = None
+        if self.use_temporal_avg_monitor:
+            monitor = TemporalAverage(
+                period=tr,
+                monitor_vars=self.model.get_var_info([obs_var])
+            )
+        else:
+            monitor = RawSubSample(
+                period=tr,
+                monitor_vars=self.model.get_var_info([obs_var])
+            )
+        sim = Simulator(
+            connectivity=con,
+            model=self.model,
+            history=history,
+            integrator=integrator,
+            monitors=[monitor]
+        )
+
+        # Run simulation
+        sim.run(0, math.ceil((self.generated_warmup_samples + self.generated_simulated_samples) * tr))
+
+        # Retreive simulated data and remove warmup
+        sim_signal = monitor.data(obs_var)
+        sim_signal = sim_signal[self.generated_warmup_samples:, :]
+
+        # Hopf does not need to process bold
+        bold_signal = None
+        if isinstance(self.model, Hopf):
+            # NOTE: I don't think this is needed, we can treat sim_signal as the actual bold_signal
+            # without any transformations. If we need some sub-sampling averaging, then we just can
+            # use the TemporalAverage Monitor for the Compact simulator. So for now, we just comment 
+            # all this code, and return the simulated signal as bold signal
+
+            # # Now we need to convert the signal to samples of size tr
+            # # 
+            # # Number of samples per time bin
+            # n = int((self.tr/1000.0) / self.sampling_period_s)
+            # # Number of timepoints on the signal
+            # l = sim_signal.shape[0]
+            # # Make it multiple of n (with nan padding)
+            # tmp1 = np.pad(sim_signal, ((0, n - l % n), (0, 0)),
+            #                         mode='constant',
+            #                         constant_values=np.nan)
+            # # Reshape into blocks
+            # tmp2 = tmp1.reshape(n, int(tmp1.shape[0]/n), -1)
+            # # This is the final simulated time series
+            # bold_signal = np.nanmean(tmp2, axis=0)
+
+            bold_signal = sim_signal
+        else:
+            bold_converter = BoldStephan2008(tr=tr)
+            bold_signal = b.compute_bold(sim_signal, monitor.period)
+
+        elapsed_time = time.perf_counter() - start_time
+        print(f"Bold simulation completed. Took: {elapsed_time:.3e}s")
+
+        return bold_signal
 
     def _do_sim(self, SC):
 
@@ -88,18 +167,36 @@ class NonLinear_COV_corr_sim(COV_corr_sim_base):
         if average_count <= 0:
             raise "Invalid `average_across_simulations_count` must be a positive integer"
 
-        # Assign weights and tr to model
-        self.compact_bold_simulator.weights = SC
-        self.compact_bold_simulator.tr = self.tr
+        obs_var = None
+        sigmas = None
+        dt = None
+        tr = None
+        if isinstance(self.model, Hopf):
+            obs_var = 'x'
+            sigmas=np.r_[self.sigma, self.sigma]
+            # CAUTION! Hopf integrates in seconds not milliseconds!
+            dt = self.dt / 1000.0
+            tr = self.tr / 1000.0
+        elif isinstance(self.model, Deco2014):
+            obs_var = 're'
+            sigmas=np.r_[self.sigma, self.sigma]
+            dt = self.dt
+            tr = self.tr
+        elif isinstance(self.model, Montbrio):
+            obs_var = 'r_e'
+            sigmas=np.r_[self.sigma, 0.0, 0.0, 0.0, 0.0, 0.0]
+            dt = self.dt
+            tr = self.tr
+        else:
+            raise RuntimeError("Not implemented for Model <{self.model.__class__.__name__}>")
+
+        self.model.configure(weights=SC)
 
         # Run the model
         FC_sim = None
         COV_sim = None
         for i in range(average_count):
-            bold_signal = self.compact_bold_simulator.generate_bold(
-                self.generated_warmup_samples,
-                self.generated_simulated_samples
-            )
+            bold_signal = self.__gen_bold(SC, dt, tr, obs_var, sigmas)
             if i == 0:
                 FC_sim = FC().from_fmri(bold_signal)['FC']
                 COV_sim = self.from_fmri(bold_signal.T)
