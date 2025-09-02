@@ -10,7 +10,6 @@ from matplotlib import pyplot as plt
 # from numba import config
 # config.DISABLE_JIT = True
 
-from neuronumba.bold import BoldStephan2008
 from neuronumba.simulator.compact_bold_simulator import CompactHopfSimulator, CompactDeco2014Simulator, CompactMontbrioSimulator
 
 if __name__ == '__main__':
