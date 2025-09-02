@@ -10,7 +10,7 @@ class HFreq(Observable):
     """
 
     # tr in ms
-    tr = Attr(default=None)
+    tr = Attr(required=True, doc="TR time in ms")
     # The array or dictionary of the group that the frequencies will be extracted from. 
     # Each frmi on the array/dict should be in (time, nodes)
     group_fmri = Attr(default=None)

@@ -21,16 +21,15 @@ from scipy.linalg import expm
 from neuronumba.basic.attr import HasAttr, Attr
 from neuronumba.observables.lagged_cov import TimeLaggedCOV
 from neuronumba.observables.linear.linearfc import LinearFC
-
+from neuronumba.observables import FC
+from neuronumba.simulator.compact_bold_simulator import CompactHopfSimulator, CompactDeco2014Simulator
 
 class COV_corr_sim_base(HasAttr):
-    tr = Attr(default=3., doc="TR time in seconds")
+    tr = Attr(default=3000., doc="TR time in milliseconds")
     n_roi = Attr(default=1, doc="Number of rois")
-    sigma = Attr(default=0.1)
     tau = Attr(default=1.0)
-    model = Attr(default=None)
-    cov_obs = Attr(default=TimeLaggedCOV())
     # Time-lagged COVariance observable
+    cov_obs = Attr(default=TimeLaggedCOV())
 
     def from_fmri(self, bold_signal):
         # We need two empirical coveriances computed from the timeseries. The non-lag for the computation of the
@@ -51,6 +50,9 @@ class COV_corr_sim_base(HasAttr):
 
 
 class Linear_COV_corr_sim(COV_corr_sim_base):
+    model = Attr(default=None)
+    sigma = Attr(default=0.1)
+
     def _do_sim(self, SC):
         # Compute the model (linear hopf) for this iteration. We get:
         #   FC_sim: simulated functional connectivity matrix
@@ -74,45 +76,40 @@ class Linear_COV_corr_sim(COV_corr_sim_base):
         scaled_COV_sim = sigrat_sim * COV_sim_tau
         return FC_sim, scaled_COV_sim
 
-class Full_COV_corr_sim(COV_corr_sim_base):
-    # dt = Attr(default=0.1, doc="Simulation step delta time in seconds") -> dt goes inside the integrator
-    sampling_period = Attr(default=1.0, doc="Sampling period in seconds")
-    t_max_neuronal = Attr(default=440)
-    t_warmup = Attr(default=100, doc="Warmup iterations")
-    integrator = Attr(doc="Integrator instance")
-    # g = Attr(default=1.0, doc="The g coupling factor") -> Goes inside the model
+class NonLinear_COV_corr_sim(COV_corr_sim_base):
+    compact_bold_simulator = Attr(required=True, doc="The compact model simulator to generate the bold signal")
+    generated_warmup_samples = Attr(required=True, doc="How many samples required to generate for the warmup (this is the number of signal it will be discarded from the final generated signal)")
+    generated_simulated_samples = Attr(required=True, doc="How many useful samples to generate for each bold simulation")
+    average_across_simulations_count = Attr(default=1, doc="Stochastic generation is noisy, we can average across multiple generations")
 
     def _do_sim(self, SC):
-        obs_var = 'x'
 
-        # Lets simluate the signal
-        self.model.configure(
-            weights=SC
-            # g=self.g
-        )
-        signal = simulate_nodelay(
-            self.model,
-            self.integrator,
-            SC,
-            obs_var,
-            self.sampling_period,
-            self.t_max_neuronal,
-            self.t_warmup
-        )
+        average_count = int(self.average_across_simulations_count)
+        if average_count <= 0:
+            raise "Invalid `average_across_simulations_count` must be a positive integer"
 
-        # Now we need to convert the signal to samples of size tr
-        n = int(self.tr / self.sampling_period)
-        l = signal.shape[0]
-        tmp1 = np.pad(signal, ((0, n - l % n), (0, 0)),
-                                mode='constant',
-                                constant_values=np.nan)
-        tmp2 = tmp1.reshape(n, int(tmp1.shape[0]/n), -1)
-        bds = np.nanmean(tmp2, axis=0)
+        # Assign weights and tr to model
+        self.compact_bold_simulator.weights = SC
+        self.compact_bold_simulator.tr = self.tr
 
-        # At this point we have the simulated bold, we can proceed to compute its FC and COV
-        FC_sim = FC().from_fmri(bds)
-        # I guess we can reuse "from_fmri" here for the simulated cov
-        COV_sim = self.from_frmi(bds)
+        # Run the model
+        FC_sim = None
+        COV_sim = None
+        for i in range(average_count):
+            bold_signal = self.compact_bold_simulator.generate_bold(
+                self.generated_warmup_samples,
+                self.generated_simulated_samples
+            )
+            if i == 0:
+                FC_sim = FC().from_fmri(bold_signal)['FC']
+                COV_sim = self.from_fmri(bold_signal.T)
+            else:
+                FC_sim += FC().from_fmri(bold_signal)['FC']
+                COV_sim += self.from_fmri(bold_signal.T)
+        
+        # Average runs
+        FC_sim = FC_sim / float(average_count)
+        COV_sim = COV_sim / float(average_count)
 
         return FC_sim, COV_sim
 
