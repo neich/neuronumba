@@ -1,1 +1,1 @@
-from neuronumba.fitting.gec.fitting_gec import FitGEC, COV_corr_sim_base, linear_COV_corr_sim
+from neuronumba.fitting.gec.fitting_gec import FitGEC, COV_corr_sim_base, Linear_COV_corr_sim, NonLinear_COV_corr_sim
