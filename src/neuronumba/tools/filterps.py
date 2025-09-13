@@ -8,7 +8,6 @@
 import numpy as np
 from scipy import stats
 from enum import Enum
-from neuronumba.tools.filters import BandPassFilter
 from typing import Union
 
 class FiltPowSpetraVersion(Enum):
@@ -78,7 +77,7 @@ def filt_pow_spetra(
     elif version == FiltPowSpetraVersion.v2015:
         pw_filt_narrow = np.abs(np.fft.fft(signal, axis=0))
     else:
-        raise ValueError("Unknown version parameter")
+        raise ValueError(f"Unknown version parameter: {version}")
     
     # Get the power spectrum for the first half of frequencies
     # We take slices up to tmax/2 from the first dimension (time)
@@ -138,7 +137,7 @@ def filt_pow_spetra_multiple_subjects(
     elif version == FiltPowSpetraVersion.v2015:
         PowSpect_filt_narrow = np.zeros((n_subjects, int(np.floor(tmax / 2)), n_nodes))
         for s in range(n_subjects):
-            PowSpect_filt_narrow[s] = filt_pow_spetra(signal[s, :, :], tr, bpf, version)
+            PowSpect_filt_narrow[s] = filt_pow_spetra(signal[s, :, :], tr, version)
         Power_Areas_filt_narrow_unsmoothed = np.mean(PowSpect_filt_narrow, axis=0)  # (freqs, regions)
 
         Power_Areas_filt_narrow_smoothed = np.zeros_like(Power_Areas_filt_narrow_unsmoothed)
@@ -150,4 +149,4 @@ def filt_pow_spetra_multiple_subjects(
         return f_diff
     
     else:
-        raise ValueError("Unknown version parameter")
+        raise ValueError(f"Unknown version parameter: {version}")
