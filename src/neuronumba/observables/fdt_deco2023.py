@@ -28,15 +28,15 @@ class FdtDeco2023(Observable):
             raise TypeError("Invalid model")
         
         n_roi = np.shape(self.eff_con)[0]
-        n2 = 2 * n_roi
+        # n2 = 2 * n_roi
         
         A = self.model.get_jacobian(self.eff_con)
         Qn = self.model.get_noise_matrix(self.sigma, len(self.eff_con))
         obs = LinearFC()
         result =  obs.from_matrix(A, Qn)
-        FC_sim = result['FC']
+        # FC_sim = result['FC']
         COVsimtotal = result['CVth']
-        COV_sim = result['CV']
+        # COV_sim = result['CV']
 
         # Inverse of the Jacobian Matrix
         invA = np.linalg.inv(A)
@@ -62,12 +62,12 @@ class FdtDeco2023(Observable):
         chi2 = np.abs(invA)
 
         # average over regions
-        chij = np.mean(chi[:n_roi, :n_roi], axis=0) / np.mean(chi2[:n_roi, :n_roi], axis=0)
+        chi_j = np.mean(chi[:n_roi, :n_roi], axis=0) / np.mean(chi2[:n_roi, :n_roi], axis=0)
         # level of non-equilibrium
-        FDTm = np.mean(chij)
+        FDTm = np.mean(chi_j)
 
         return {
-            'regions_fdt': chij,
+            'regions_fdt': chi_j,
             'global_fdt': FDTm
         }
 
