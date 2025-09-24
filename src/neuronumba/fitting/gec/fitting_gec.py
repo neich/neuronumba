@@ -154,7 +154,7 @@ class NonLinear_COV_corr_sim(COV_corr_sim_base):
             bold_signal = sim_signal
         else:
             bold_converter = BoldStephan2008(tr=tr)
-            bold_signal = b.compute_bold(sim_signal, monitor.period)
+            bold_signal = bold_converter.compute_bold(sim_signal, monitor.period)
 
         elapsed_time = time.perf_counter() - start_time
         print(f"Bold simulation completed. Took: {elapsed_time:.3e}s")
@@ -297,12 +297,12 @@ class FitGEC(HasAttr):
         elif self.norm_method == FitGEC.NormMethod.STD_NON_ZERO:
             nonzero_mask = result != 0
             if np.sum(nonzero_mask) == 0:
-                warning.warn("While normalizing EC all values are zero, returning unchanged")
+                warnings.warn("While normalizing EC all values are zero, returning unchanged")
             else:
-                result /= np.std(results[nonzero_mask])
+                result /= np.std(result[nonzero_mask])
                 result *= self.norm_scaling
         else:
-            warning.warn("Unkown scaling method, returning unchanged")
+            warnings.warn("Unkown scaling method, returning unchanged")
 
         return result
 
