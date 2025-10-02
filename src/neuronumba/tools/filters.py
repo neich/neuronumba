@@ -14,6 +14,7 @@ class BandPassFilter(HasAttr):
 
     apply_demean = Attr(default=True, required=False)
     apply_detrend = Attr(default=True, required=False)
+    apply_finalDetrend = Attr(default=False, required=False)
 
     def filter(self, signal):
         """
@@ -40,6 +41,8 @@ class BandPassFilter(HasAttr):
 
                 signal_filt[:, n] = filtfilt(bfilt, afilt, ts, padlen=3 * (max(len(bfilt),
                                                                                   len(afilt)) - 1))  # Band pass filter. padlen modified to get the same result as in Matlab
+
+                signal_filt[:, n] = detrend(signal_filt[:, n]) if self.apply_finalDetrend else signal_filt[:, n]
 
             else:  # We've found problems, mark this region as "problematic", to say the least...
                 raise FloatingPointError("NaN found when applying BandPassFilter!")
