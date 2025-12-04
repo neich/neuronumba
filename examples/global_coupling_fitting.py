@@ -11,10 +11,9 @@ import sys
 
 import numpy as np
 from concurrent.futures import ProcessPoolExecutor, as_completed
-import matplotlib.pyplot as plt
 from numpy.ma.core import repeat
 
-import numba
+# import numba
 # Disable JIT compilation for debugging purposes
 # numba.config.DISABLE_JIT = True  
 
@@ -321,9 +320,12 @@ def simulate(exec_env, g):
 def simulate_single_subject(exec_env, g):
     signal = simulate(exec_env, g) * exec_env.get('scale_signal', 1.0)
     sampling_period = exec_env['sampling_period']
-    b = exec_env['bold_model']
-    bds = b.compute_bold(signal, sampling_period)
-    return signal, bds
+    if exec_env['bold']:
+        b = exec_env['bold_model']
+        bds = b.compute_bold(signal, sampling_period)
+        return signal, bds
+    else:
+        return signal, None
 
 def process_bold_signals(bold_signals, observables_list, band_pass_filter=None, verbose=True):
     """
