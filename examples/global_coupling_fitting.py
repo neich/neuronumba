@@ -5,15 +5,15 @@ import gc
 import glob
 import itertools
 import os
+import secrets
 import time
 import sys
 
 import numpy as np
 from concurrent.futures import ProcessPoolExecutor, as_completed
-import matplotlib.pyplot as plt
 from numpy.ma.core import repeat
 
-import numba
+# import numba
 # Disable JIT compilation for debugging purposes
 # numba.config.DISABLE_JIT = True  
 
@@ -133,7 +133,11 @@ def create_observables_dict(observables, bpf):
     obs_dict = {}
     for item in observables:
         l = item.split(",")
-        obs_dict[l[0]] = create_observable_config(l[0], l[1:], bpf)
+        obs_name = l[0]
+        if obs_name in obs_dict:
+            raise ValueError(f"Duplicate observable name: {obs_name}")
+        measures = l[1:]
+        obs_dict[obs_name] = create_observable_config(obs_name, measures, bpf)
     return obs_dict
 
 
@@ -165,7 +169,7 @@ class IntegratorFactory:
     
     _configurations = {
         'Hopf': lambda dt: EulerStochastic(dt=dt, sigmas=np.r_[1e-2, 1e-2]),
-        'Deco2014': lambda dt: EulerStochastic(dt=dt, sigmas=np.r_[1e-3, 1e-3]),
+        'Deco2014': lambda dt: EulerStochastic(dt=dt, sigmas=np.r_[2e-4, 2e-4]),
         'Montbrio': lambda dt: EulerStochastic(dt=dt, sigmas=np.r_[0.0, 0.0, 0.0, 0.0, 1e-3, 1e-3]),
         'Zerlaut2O': lambda dt: EulerStochastic(dt=dt, sigmas=np.r_[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1e-3]),
     }
@@ -290,6 +294,12 @@ def load_sc(fmri_path, scale):
 def simulate(exec_env, g):
     model = ModelFactory.create_model(exec_env['model']).set_attributes(exec_env['model_attributes'])
     weights = exec_env['weights']
+    if 'weights_sigma_factor' in exec_env:
+        mmax = np.max(weights)
+        weights = weights + exec_env['weights_sigma_factor'] * mmax * np.random.normal(size=exec_env['weights'].shape)
+        weights = np.where(weights < 0, 0, weights)
+        w = mmax / np.max(weights)
+        weights /= w
     obs_var = exec_env['obs_var']
     t_max_neuronal = exec_env['t_max_neuronal']
     t_warmup = exec_env['t_warmup']
@@ -310,18 +320,30 @@ def simulate(exec_env, g):
 def simulate_single_subject(exec_env, g):
     signal = simulate(exec_env, g) * exec_env.get('scale_signal', 1.0)
     sampling_period = exec_env['sampling_period']
-    b = exec_env['bold_model']
-    bds = b.compute_bold(signal, sampling_period)
-    return bds
+    if exec_env['bold']:
+        b = exec_env['bold_model']
+        bds = b.compute_bold(signal, sampling_period)
+        return signal, bds
+    else:
+        return signal, None
 
-def process_bold_signals(bold_signals, exec_env):
-    # Process the BOLD signals
-    # BOLDSignals is a dictionary of subjects {subjectName: subjectBOLDSignal}
-    # observables is a dictionary of {observableName: ObservableConfig}
+def process_bold_signals(bold_signals, observables_list, band_pass_filter=None, verbose=True):
+    """
+    Process BOLD signals and compute observables.
+    
+    Args:
+        bold_signals: Dictionary of subjects {subjectName: subjectBOLDSignal}
+        observables_list: List of observable specifications (e.g., ['FC,PS,KS'])
+        band_pass_filter: Optional band-pass filter to apply
+        verbose: Whether to print progress information
+        
+    Returns:
+        Dictionary containing computed observables for all subjects
+    """
     num_subjects = len(bold_signals)
     N = bold_signals[next(iter(bold_signals))].shape[1]
 
-    observables = create_observables_dict(exec_env['observables'], exec_env.get('bpf', None))
+    observables = create_observables_dict(observables_list, band_pass_filter)
 
     # First, let's create a data structure for the observables operations...
     measureValues = {}
@@ -330,7 +352,8 @@ def process_bold_signals(bold_signals, exec_env):
 
     # Loop over subjects
     for pos, s in enumerate(bold_signals):
-        print('   Processing signal {}/{} Subject: {} ({}x{})'.format(pos + 1, num_subjects, s, bold_signals[s].shape[0], bold_signals[s].shape[1]), end='', flush=True)
+        if verbose:
+            print('   Processing signal {}/{} Subject: {} ({}x{})'.format(pos + 1, num_subjects, s, bold_signals[s].shape[0], bold_signals[s].shape[1]), end='', flush=True)
         signal = bold_signals[s]  # LR_version_symm(tc[s])
         start_time = time.perf_counter()
 
@@ -338,7 +361,8 @@ def process_bold_signals(bold_signals, exec_env):
             observable_config = observables[ds]
             measureValues[ds] = observable_config.process_signal(signal, pos, measureValues[ds])
 
-        print(" -> computed in {} seconds".format(time.perf_counter() - start_time))
+        if verbose:
+            print(" -> computed in {} seconds".format(time.perf_counter() - start_time))
 
     for ds in observables:  # finish computing each observable
         observable_config = observables[ds]
@@ -362,13 +386,13 @@ def eval_one_param(exec_env, g):
     num_subjects = exec_env['num_subjects']
     for nsub in range(num_subjects):  # trials. Originally it was 20.
         print(f"   Simulating g={g} -> subject {nsub}/{num_subjects}!!!")
-        bds = simulate_single_subject(exec_env, g)
+        _, bds = simulate_single_subject(exec_env, g)
         while np.isnan(bds).any() or (np.abs(bds) > np.inf).any():  # This is certainly dangerous, we can have an infinite loop... let's hope not! ;-)
             raise RuntimeError(f"Numeric error computing subject {nsub}/{num_subjects} for g={g}")
         simulated_bolds[nsub] = bds
         gc.collect()
 
-    dist = process_bold_signals(simulated_bolds, exec_env)
+    dist = process_bold_signals(simulated_bolds, exec_env['observables'], exec_env.get('bpf', None), exec_env.get('verbose', True))
     # now, add {label: currValue} to the dist dictionary, so this info is in the saved file (if using the decorator @loadOrCompute)
     dist['g'] = g
 
@@ -435,18 +459,24 @@ def process_empirical_subjects(bold_signals, observables: dict[str, ObservableCo
 
 def executor_simulate_single_subject(n, exec_env, g):
     try:
-        return n, simulate_single_subject(exec_env, g)
+        seed = secrets.randbits(32)
+        np.random.seed(seed)  # Ensure reproducibility for each subject
+        signal, bold = simulate_single_subject(exec_env, g)
+        if exec_env.get('callback_simulate_single_subject', None) is not None:
+            exec_env['callback_simulate_single_subject'](n, exec_env, signal, bold)
+        return n, bold
     except Exception as e:
-        print(f"Error simulating subject {n}: {e}", file=sys.stderr)
-        raise
+        raise RuntimeError(f"Error simulating subject {n}: {e}")
+
 
 def executor_simulate_single_subject_raw(n, exec_env, g):
     try:
+        seed = secrets.randbits(32)
+        np.random.seed(seed)  # Ensure reproducibility for each subject
         return n, simulate(exec_env, g)
     except Exception as e:
-        print(f"Error simulating subject {n}: {e}", file=sys.stderr)
-        raise
-
+        raise RuntimeError(f"Error simulating subject {n}: {e}")
+        
 
 def execute_multiprocessing_simulation(exec_env, g, nproc, executor_func=None, result_key='simulated_data'):
     """
@@ -555,7 +585,7 @@ def compute_g_mp(exec_env, g, nproc):
         sim_measures = {"error": "Nan or Inf in bold signals"}
         print(f"EXECUTOR --- NUMERICAL ERROR for {out_file}")
     else:
-        sim_measures = process_bold_signals(simulated_bolds, exec_env)
+        sim_measures = process_bold_signals(simulated_bolds, exec_env['observables'], exec_env.get('bpf', None), exec_env.get('verbose', True))
         sim_measures['g'] = g
         processed = exec_env['processed']
 
@@ -563,12 +593,13 @@ def compute_g_mp(exec_env, g, nproc):
         compute_observables_distances(sim_measures, processed, observables)
 
     hdf.savemat(out_file, sim_measures)
+    return simulated_bolds, sim_measures
 
 
 def compute_observables_distances(sim_measures, processed, observables):
     for ds in observables:
         for dname, dist in observables[ds].distance_measures.items():
-            sim_measures[f'dist_{ds}_{dname}'] = dist.compute_distance(sim_measures[ds], processed[ds])
+            sim_measures[f'dist_{ds}_{dname}'] = dist.distance(sim_measures[ds], processed[ds])
 
 
 def run(args):
@@ -607,6 +638,9 @@ def run(args):
 
     # Load structural connectivity matrix. In our case, we average all the SC matrices of all subjects
     sc_norm = load_sc(args.fmri_path, args.sc_scaling)
+    if args.sc_sigma_factor > 0.0:
+        sc_norm = lambda : sc_norm + np.random.normal(loc=0.0, scale=args.sc_sigma_factor*np.max(sc_norm), size=sc_norm.shape)
+
 
     bold = True
     if args.model not in ModelFactory.list_available_models():
@@ -906,7 +940,7 @@ def generate_parameter_filename(param_set, prefix='fitting'):
     return fname
 
 
-def run_parameter_exploration(param_explore, base_exec_env, out_file_path, nproc):
+def run_parameter_exploration(param_explore, base_exec_env, out_file_path, nproc, callback=None):
     """
     Run parameter exploration with all combinations.
     
@@ -942,8 +976,10 @@ def run_parameter_exploration(param_explore, base_exec_env, out_file_path, nproc
         exec_env['out_file'] = out_file
         
         # Run the computation
-        compute_g_mp(exec_env, g, nproc)
+        bolds, sim_measures = compute_g_mp(exec_env, g, nproc)
 
+        if callback:
+            callback(bolds, sim_measures, exec_env)
 
 def gen_arg_parser():
     parser = argparse.ArgumentParser(description="Global coupling fitting script for NeuroNumba models.")
@@ -961,6 +997,7 @@ def gen_arg_parser():
     parser.add_argument("--out-path", type=str, required=True, help="Path to folder for output results")
     parser.add_argument("--tr", type=float, help="Time resolution of fMRI scanner (seconds)")
     parser.add_argument("--sc-scaling", type=float, default=0.2, help="Scaling factor for the SC matrix")
+    parser.add_argument("--sc-sigma", type=float, default=0.1, help="Sigma scale value to generate noise for the SC matrix")
     parser.add_argument("--scale-signal", type=float, default=1.0, help="Scaling signal factor for unit conversion")
     parser.add_argument("--tmax", type=float, required=False, help="Override simulation time (seconds)")
     parser.add_argument("--fmri-path", type=str, help="Path to fMRI timeseries data")
