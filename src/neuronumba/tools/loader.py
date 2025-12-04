@@ -7,237 +7,240 @@ import neuronumba.tools.hdf as hdf
 import numpy as np
 import re
 
-def read_csv_with_repeated_delimiters(file_path, delimiter=',', encoding='utf-8', dtype=None, skip_header=False):
+def read_csv_with_repeated_delimiters(file_path, delimiter=None, encoding='utf-8', dtype=float, skip_header=False):
     """
-    Read a CSV file with repeated delimiters using pure Python/NumPy (no pandas dependency).
+    Read a CSV file containing numeric values with automatic delimiter inference.
 
-    This function handles CSV files where delimiters appear consecutively multiple times
-    by parsing the text directly and cleaning the data manually using only built-in Python
-    functions and NumPy.
+    This function handles CSV files where delimiters may appear consecutively multiple times.
+    It automatically infers the delimiter if not specified and enforces that all values
+    must be numeric (no blank values allowed within rows).
 
     Parameters:
     -----------
     file_path : str
         Path to the CSV file
-    delimiter : str, default ','
-        The delimiter character that may be repeated (e.g., ',', ';', '|', etc.)
+    delimiter : str, optional
+        The delimiter character. If None, will be automatically inferred from common
+        delimiters: comma, semicolon, tab, space, pipe
     encoding : str, default 'utf-8'
         File encoding
-    dtype : data type, optional
-        Data type for the resulting array. If None, will automatically infer types.
-        Can be: int, float, str, or any numpy dtype
+    dtype : data type, default float
+        Data type for the resulting array (must be numeric: int, float, np.float64, etc.)
     skip_header : bool, default False
         Whether to skip the first row (assumed to be header)
 
     Returns:
     --------
     numpy.ndarray
-        The data as a numpy array with appropriate data types
+        The data as a numpy array with the specified numeric dtype
+
+    Raises:
+    -------
+    ValueError
+        If non-numeric values are found, if rows have blank values, or if delimiter
+        cannot be inferred
 
     Examples:
     ---------
-    >>> # File with repeated commas: "1,,2,,,3\n4,,,5,,6"
-    >>> data = read_csv_with_repeated_delimiters_pure('data.csv')
+    >>> # File with repeated commas: "1,,2,,,3\\n4,,,5,,6"
+    >>> data = read_csv_with_repeated_delimiters('data.csv')
     >>> print(data)
-    [[1 2 3]
-     [4 5 6]]
+    [[1. 2. 3.]
+     [4. 5. 6.]]
 
-    >>> # Mixed data types
-    >>> data = read_csv_with_repeated_delimiters_pure('mixed.csv', skip_header=True)
-    >>> print(data)  # Returns object array for mixed types
+    >>> # Specify delimiter explicitly
+    >>> data = read_csv_with_repeated_delimiters('data.tsv', delimiter='\\t')
 
-    >>> # Force specific type
-    >>> data = read_csv_with_repeated_delimiters_pure('numbers.csv', dtype=float)
+    >>> # Get integer array
+    >>> data = read_csv_with_repeated_delimiters('integers.csv', dtype=int)
     """
+    
+    COMMON_DELIMITERS = [',', ';', '\t', ' ', '|']
 
-    def clean_and_split_line(line, delimiter):
-        """Clean a line by removing repeated delimiters and split into fields"""
+    def is_numeric(value):
+        """Check if a string value can be converted to a number."""
+        try:
+            float(value.strip())
+            return True
+        except (ValueError, AttributeError):
+            return False
+
+    def split_line_with_delimiter(line, delim):
+        """Split a line using the given delimiter, collapsing repeated delimiters."""
         if not line.strip():
             return []
 
-        # Remove leading/trailing whitespace
         line = line.strip()
 
         # Replace multiple consecutive delimiters with single delimiter
-        # Need to escape special regex characters
-        escaped_delimiter = re.escape(delimiter)
-        cleaned_line = re.sub(f"{escaped_delimiter}+", delimiter, line)
+        escaped_delimiter = re.escape(delim)
+        cleaned_line = re.sub(f"{escaped_delimiter}+", delim, line)
 
-        # Remove leading/trailing delimiters if they exist
-        cleaned_line = cleaned_line.strip(delimiter)
+        # Remove leading/trailing delimiters
+        cleaned_line = cleaned_line.strip(delim)
 
-        # Split by delimiter and clean each field
         if cleaned_line:
-            fields = cleaned_line.split(delimiter)
-            # Strip whitespace from each field
-            fields = [field.strip() for field in fields]
+            fields = [field.strip() for field in cleaned_line.split(delim)]
             return fields
-        else:
-            return []
+        return []
 
-    def infer_field_type(value):
+    def infer_delimiter_for_line(line):
         """
-        Try to infer the most appropriate type for a field value.
-        Returns (converted_value, type_class)
+        Infer the best delimiter for a single line by trying common delimiters
+        and returning the one that produces the most numeric fields.
         """
-        value = value.strip()
+        best_delimiter = None
+        best_count = 0
 
-        # Handle empty values
-        if not value:
-            return value, str
+        for delim in COMMON_DELIMITERS:
+            fields = split_line_with_delimiter(line, delim)
+            if fields and all(is_numeric(f) for f in fields):
+                if len(fields) > best_count:
+                    best_count = len(fields)
+                    best_delimiter = delim
 
-        # Try integer first (most restrictive)
-        try:
-            # Handle values like "3.0" that should be integers
-            if '.' in value:
-                float_val = float(value)
-                if float_val.is_integer():
-                    return int(float_val), int
-                else:
-                    return float_val, float
-            else:
-                return int(value), int
-        except ValueError:
-            pass
+        return best_delimiter, best_count
 
-        # Try float
-        try:
-            return float(value), float
-        except ValueError:
-            pass
-
-        # Keep as string if nothing else works
-        return value, str
-
-    def determine_column_types(data_rows):
+    def infer_delimiter_for_file(lines, start_line):
         """
-        Analyze all data to determine the best type for each column.
-        Uses hierarchy: int -> float -> str (can only upgrade, not downgrade)
+        Infer the delimiter for the entire file by checking which delimiter
+        works consistently across all data lines.
         """
-        if not data_rows or not data_rows[0]:
-            return []
-
-        num_cols = len(data_rows[0])
-        column_types = [int] * num_cols  # Start with most restrictive type
-
-        # Examine each value to determine column types
-        for row in data_rows:
-            for col_idx in range(min(len(row), num_cols)):
-                value = row[col_idx]
-                _, field_type = infer_field_type(value)
-
-                # Upgrade type if necessary (int -> float -> str)
-                current_type = column_types[col_idx]
-                if current_type == int and field_type == float:
-                    column_types[col_idx] = float
-                elif current_type in [int, float] and field_type == str:
-                    column_types[col_idx] = str
-
-        return column_types
-
-    def convert_value(value, target_type):
-        """Convert a single value to the specified target type"""
-        value = value.strip()
-
-        # Handle empty values
-        if not value:
-            if target_type == int:
-                return 0
-            elif target_type == float:
-                return 0.0
-            else:
-                return ''
-
-        try:
-            if target_type == int:
-                # Handle "3.0" -> 3 conversion
-                return int(float(value))
-            elif target_type == float:
-                return float(value)
-            else:
-                return str(value)
-        except (ValueError, TypeError):
-            # Fallback to string representation if conversion fails
-            return str(value)
-
-    def pad_rows(data_rows):
-        """Ensure all rows have the same number of columns by padding with empty strings"""
-        if not data_rows:
-            return data_rows
-
-        max_cols = max(len(row) for row in data_rows)
-
-        for row in data_rows:
-            while len(row) < max_cols:
-                row.append('')
-
-        return data_rows, max_cols
+        # First, try to infer from the first data line
+        for line_num, line in enumerate(lines):
+            if line_num < start_line:
+                continue
+            if not line.strip():
+                continue
+            
+            best_delim, _ = infer_delimiter_for_line(line)
+            if best_delim is not None:
+                # Verify this delimiter works for all lines
+                all_valid = True
+                num_cols = None
+                
+                for check_line_num, check_line in enumerate(lines):
+                    if check_line_num < start_line:
+                        continue
+                    if not check_line.strip():
+                        continue
+                    
+                    fields = split_line_with_delimiter(check_line, best_delim)
+                    if not fields or not all(is_numeric(f) for f in fields):
+                        all_valid = False
+                        break
+                    
+                    if num_cols is None:
+                        num_cols = len(fields)
+                    elif len(fields) != num_cols:
+                        all_valid = False
+                        break
+                
+                if all_valid:
+                    return best_delim
+        
+        # If first line's delimiter doesn't work for all, try all delimiters
+        for delim in COMMON_DELIMITERS:
+            all_valid = True
+            num_cols = None
+            
+            for line_num, line in enumerate(lines):
+                if line_num < start_line:
+                    continue
+                if not line.strip():
+                    continue
+                
+                fields = split_line_with_delimiter(line, delim)
+                if not fields or not all(is_numeric(f) for f in fields):
+                    all_valid = False
+                    break
+                
+                if num_cols is None:
+                    num_cols = len(fields)
+                elif len(fields) != num_cols:
+                    all_valid = False
+                    break
+            
+            if all_valid and num_cols is not None and num_cols > 0:
+                return delim
+        
+        return None
 
     # Main processing logic
     try:
-        # Read the entire file
         with open(file_path, 'r', encoding=encoding) as file:
             lines = file.readlines()
 
         if not lines:
             raise ValueError("File is empty")
 
-        # Process lines into structured data
-        data_rows = []
         start_line = 1 if skip_header else 0
+
+        # Infer delimiter if not provided
+        if delimiter is None:
+            delimiter = infer_delimiter_for_file(lines, start_line)
+            if delimiter is None:
+                raise ValueError(
+                    "Could not infer delimiter. File may not contain valid numeric data "
+                    "or may use an unsupported delimiter. Try specifying delimiter explicitly."
+                )
+
+        # Now parse all lines using the inferred/provided delimiter
+        data_rows = []
+        num_cols = None
 
         for line_num, line in enumerate(lines):
             if line_num < start_line:
-                continue  # Skip header if requested
+                continue
+            if not line.strip():
+                continue
 
-            fields = clean_and_split_line(line, delimiter)
-            if fields:  # Only add non-empty rows
-                data_rows.append(fields)
+            fields = split_line_with_delimiter(line, delimiter)
+            if not fields:
+                continue
+
+            # Check all fields are numeric
+            for col_idx, field in enumerate(fields):
+                if not is_numeric(field):
+                    raise ValueError(
+                        f"Non-numeric value '{field}' found at row {line_num + 1}, column {col_idx + 1}"
+                    )
+
+            # Check consistent column count
+            if num_cols is None:
+                num_cols = len(fields)
+            elif len(fields) != num_cols:
+                raise ValueError(
+                    f"Inconsistent column count at row {line_num + 1}: expected {num_cols}, got {len(fields)}"
+                )
+
+            data_rows.append(fields)
 
         if not data_rows:
-            raise ValueError("No data rows found after processing")
+            raise ValueError("No valid data rows found")
 
-        # Ensure rectangular data (all rows same length)
-        data_rows, num_cols = pad_rows(data_rows)
-
-        # Determine data types for each column
-        if dtype is None:
-            # Auto-infer types
-            column_types = determine_column_types(data_rows)
-        else:
-            # Use specified type for all columns
-            column_types = [dtype] * num_cols
-
-        # Convert all values to their target types
+        # Convert to numeric values
         processed_data = []
-        for row in data_rows:
+        for row_idx, row in enumerate(data_rows):
             processed_row = []
             for col_idx, value in enumerate(row):
-                if col_idx < len(column_types):
-                    converted_value = convert_value(value, column_types[col_idx])
-                else:
-                    # Fallback for extra columns
-                    converted_value = str(value)
-                processed_row.append(converted_value)
+                try:
+                    if dtype in (int, np.int32, np.int64):
+                        processed_row.append(int(float(value.strip())))
+                    else:
+                        processed_row.append(float(value.strip()))
+                except ValueError as e:
+                    raise ValueError(
+                        f"Non-numeric value '{value}' found at row {row_idx + 1}, column {col_idx + 1}"
+                    ) from e
             processed_data.append(processed_row)
 
-        # Create numpy array with appropriate dtype
-        if dtype is not None:
-            # Use explicitly specified dtype
-            result = np.array(processed_data, dtype=dtype)
-        else:
-            # Use inferred types
-            if len(set(column_types)) == 1:
-                # All columns have the same type
-                result = np.array(processed_data, dtype=column_types[0])
-            else:
-                # Mixed types - use object array
-                result = np.array(processed_data, dtype=object)
-
-        return result
+        return np.array(processed_data, dtype=dtype)
 
     except FileNotFoundError:
         raise FileNotFoundError(f"File not found: {file_path}")
+    except ValueError:
+        raise
     except Exception as e:
         raise Exception(f"Error processing file {file_path}: {str(e)}")
 
@@ -251,8 +254,12 @@ def load_2d_matrix(filename, delimiter=None, index=None):
     if file_extension == '.csv':
         return read_csv_with_repeated_delimiters(filename, delimiter=delimiter)
     elif file_extension == '.tsv':
+        # For .tsv files, default to tab if no delimiter specified
         if delimiter is None:
             delimiter = '\t'
+        return read_csv_with_repeated_delimiters(filename, delimiter=delimiter)
+    elif file_extension == '.txt':
+        # For .txt files, auto-infer delimiter
         return read_csv_with_repeated_delimiters(filename, delimiter=delimiter)
     elif file_extension == '.mat':
         if index is None:
