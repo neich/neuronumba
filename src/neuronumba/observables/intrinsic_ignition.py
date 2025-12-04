@@ -34,7 +34,7 @@
 #   and [EscrichsEtAl2021]
 # --------------------------------------------------------------------------------------
 import numpy as np
-import warnings
+from numba import njit
 from scipy import signal
 
 from neuronumba.observables.base_observable import ObservableFMRI
@@ -42,16 +42,79 @@ from neuronumba.basic.attr import Attr
 
 
 # ==================================
-# import the matlab engine. I hate this, but...
+# Numba-optimized connected components implementation
+# Replaces MATLAB's dmperm dependency using Union-Find algorithm
 # ==================================
-try:
-    import matlab.engine
-    eng = matlab.engine.start_matlab()
-except:
-    import networkx as nx
-    eng = None
-# import networkx as nx
-# eng = None
+@njit(cache=True)
+def _union_find_root(parent, i):
+    """Find root of node i with path compression."""
+    root = i
+    while parent[root] != root:
+        root = parent[root]
+    # Path compression
+    while parent[i] != root:
+        next_i = parent[i]
+        parent[i] = root
+        i = next_i
+    return root
+
+
+@njit(cache=True)
+def _union_find_union(parent, rank, i, j):
+    """Union two sets by rank."""
+    root_i = _union_find_root(parent, i)
+    root_j = _union_find_root(parent, j)
+    if root_i != root_j:
+        if rank[root_i] < rank[root_j]:
+            parent[root_i] = root_j
+        elif rank[root_i] > rank[root_j]:
+            parent[root_j] = root_i
+        else:
+            parent[root_j] = root_i
+            rank[root_i] += 1
+
+
+@njit(cache=True)
+def _get_max_comp_size_numba(A):
+    """
+    Get the maximum connected component size from an adjacency matrix.
+    Numba-optimized version using Union-Find algorithm.
+    
+    Parameters:
+    -----------
+    A : ndarray
+        Square adjacency matrix (N x N), will be treated as symmetric
+    
+    Returns:
+    --------
+    int
+        Size of the largest connected component
+    """
+    N = A.shape[0]
+    
+    # Initialize Union-Find structures
+    parent = np.arange(N)
+    rank = np.zeros(N, dtype=np.int64)
+    
+    # Process all edges (considering symmetry)
+    for i in range(N):
+        for j in range(N):
+            if i != j and (A[i, j] != 0 or A[j, i] != 0):
+                _union_find_union(parent, rank, i, j)
+    
+    # Count component sizes
+    comp_sizes = np.zeros(N, dtype=np.int64)
+    for i in range(N):
+        root = _union_find_root(parent, i)
+        comp_sizes[root] += 1
+    
+    # Find maximum
+    max_size = 0
+    for i in range(N):
+        if comp_sizes[i] > max_size:
+            max_size = comp_sizes[i]
+    
+    return max_size
 # ==================================
 
 
@@ -78,38 +141,11 @@ class Intrinsic_Ignition(ObservableFMRI):
         return c
 
     @staticmethod
-    def _dmperm(A):  # Dulmage-Mendelsohn decomposition
-        (useless1,p,useless2,r) = eng.dmperm(eng.double(A), nargout=4)  # Apply MATLABs dmperm
-        outp = np.asarray(p).flatten()
-        outr = np.asarray(r).flatten()
-        return outp, outr
-
-    # based on the code by J Goni, University of Navarra and Indiana University, 2009/2011
-    # This is the code originally used in the original papers [DecoEtAl2017] and [DecoKringelbach2017]
-    @staticmethod
-    def _get_components(A):
-        # i = Integration.IntegrationFromFC_Fast(A, nbins=20)
-        p, r = Intrinsic_Ignition._dmperm(A)
-        # p indicates a permutation (along rows and columns)
-        # r is a vector indicating the component boundaries
-        #       List including the number of nodes of each component.
-        # We use diff to compute the component sizes: The first difference is a[i+1] - a[i], and higher differences are calculated recursively.
-        comp_sizes = np.diff(r)
-        # Number of components found.
-        num_comps = np.size(comp_sizes)
-        # initialization
-        comps = np.zeros(A.shape[0])
-        # first position of each component is set to one
-        comps[r[0:num_comps].astype(int)-1] = np.ones(num_comps)
-        # cumulative sum produces a label for each component (in a consecutive way)
-        comps = np.cumsum(comps)
-        # re-order component labels according to adj.
-        comps[p.astype(int)-1] = comps
-
-        return comps, comp_sizes
-
-    @staticmethod
     def _get_max_comp_size(A):
+        """
+        Get the maximum connected component size from an adjacency matrix.
+        Uses Numba-optimized Union-Find algorithm (no MATLAB dependency).
+        """
         if A.shape[0] != A.shape[1]:
             raise Exception('this adjacency matrix is not square')
 
@@ -123,16 +159,8 @@ class Intrinsic_Ignition(ObservableFMRI):
             A = np.logical_or(A, np.eye(A.shape[0]))
             A = A.astype(np.int64)
 
-        if eng is not None:
-            # This is the original implementation in [DecoEtAl2017]
-            comps, csize = Intrinsic_Ignition._get_components(A)
-            csize = np.max(csize)
-        else:
-            # This is an ALTERNATIVE implementation that does not require MATLAB Engine!
-            G = nx.from_numpy_array(A)
-            # largest_cc = max(nx.connected_components(G), key=len)
-            connected_components = list(nx.connected_components(G))
-            csize = max(len(c) for c in connected_components)
+        # Use Numba-optimized implementation
+        csize = _get_max_comp_size_numba(A)
         return csize
 
 
