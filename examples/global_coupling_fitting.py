@@ -638,8 +638,8 @@ def run(args):
 
     # Load structural connectivity matrix. In our case, we average all the SC matrices of all subjects
     sc_norm = load_sc(args.fmri_path, args.sc_scaling)
-    if args.sc_sigma_factor > 0.0:
-        sc_norm = lambda : sc_norm + np.random.normal(loc=0.0, scale=args.sc_sigma_factor*np.max(sc_norm), size=sc_norm.shape)
+    if args.sc_sigma > 0.0:
+        sc_norm = lambda : sc_norm + np.random.normal(loc=0.0, scale=args.sc_sigma*np.max(sc_norm), size=sc_norm.shape)
 
 
     bold = True
@@ -997,7 +997,7 @@ def gen_arg_parser():
     parser.add_argument("--out-path", type=str, required=True, help="Path to folder for output results")
     parser.add_argument("--tr", type=float, help="Time resolution of fMRI scanner (seconds)")
     parser.add_argument("--sc-scaling", type=float, default=0.2, help="Scaling factor for the SC matrix")
-    parser.add_argument("--sc-sigma", type=float, default=0.1, help="Sigma scale value to generate noise for the SC matrix")
+    parser.add_argument("--sc-sigma", type=float, default=0.0, help="Sigma scale value to generate noise for the SC matrix")
     parser.add_argument("--scale-signal", type=float, default=1.0, help="Scaling signal factor for unit conversion")
     parser.add_argument("--tmax", type=float, required=False, help="Override simulation time (seconds)")
     parser.add_argument("--fmri-path", type=str, help="Path to fMRI timeseries data")
