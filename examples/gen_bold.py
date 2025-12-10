@@ -1,13 +1,20 @@
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend to avoid Qt errors in debugger
+
 import argparse
 import os
 from pathlib import Path
 import time
 
+# import numba
+# numba.config.DISABLE_JIT = True  # Ensure JIT is enabled
+
+
 import numpy as np
 
 from global_coupling_fitting import IntegratorFactory, ModelFactory, generate_parameter_combinations, parse_parameter_definitions, process_model_parameters
 from neuronumba.bold import BoldStephan2008
-from neuronumba.bold.stephan_2007 import BoldStephan2007
+from neuronumba.bold.stephan_2007 import BoldStephan2007, BoldStephan2007Alt
 from neuronumba.simulator.connectivity import Connectivity
 from neuronumba.simulator.history import HistoryNoDelays
 from neuronumba.simulator.integrators import EulerStochastic
@@ -79,7 +86,6 @@ if __name__ == '__main__':
     integrator = IntegratorFactory.create_integrator(args.model, dt)
 
     n_rois = weights.shape[0]
-    sampling_period = 1.0
     lengths = np.random.rand(n_rois, n_rois)*10.0 + 1.0
     speed = 1.0
     con = Connectivity(weights=weights, lengths=lengths, speed=speed)
@@ -88,7 +94,7 @@ if __name__ == '__main__':
     history = HistoryNoDelays()
     # mnt = TemporalAverage(period=1.0, dt=dt)
     # monitor = TemporalAverage(period=sampling_period, monitor_vars=model.get_var_info([obs_var]))
-    monitor = TemporalAverage(period=sampling_period, monitor_vars=model.get_var_info([obs_var]))
+    monitor = RawSubSample(period=sampling_period, monitor_vars=model.get_var_info([obs_var]))
     s = Simulator(connectivity=con, model=model, history=history, integrator=integrator, monitors=[monitor])
     start_time = time.perf_counter()
     # Convert to milliseconds
@@ -97,12 +103,12 @@ if __name__ == '__main__':
     data = monitor.data(obs_var)
     # In Montbrio model, 1 r == 100.0 Hz
     # And discard the first 2s
-    re = 100.0 * data[2000:, :]
+    re = data[2000:, :]
 
     # Normalize input signal
     baseline = np.mean(re, axis=0)
     rn = (re - baseline[np.newaxis, :]) / baseline[np.newaxis, :]
-    rn += baseline[np.newaxis, :]
+    rn += 2.0 * baseline[np.newaxis, :]
 
     b_s2008 = BoldStephan2008(tr=tr).configure()
     bold_s2008 = b_s2008.compute_bold(rn, monitor.period)[10:, :]
@@ -112,6 +118,10 @@ if __name__ == '__main__':
     bold_s2007 = b_s2007.compute_bold(rn, monitor.period)[10:, :]
     bold_filtered_s2007 = bpf.filter(bold_s2007) if bpf is not None else bold_s2007
 
+    b_s2007_alt = BoldStephan2007Alt(tr=tr).configure()
+    bold_s2007_alt = b_s2007_alt.compute_bold(rn, monitor.period)[10:, :]
+    bold_filtered_s2007_alt = bpf.filter(bold_s2007_alt) if bpf is not None else bold_s2007_alt
+
     out_path = Path(args.out_path)
     out_path.mkdir(parents=True, exist_ok=True)
      # Save data to MAT file
@@ -119,4 +129,7 @@ if __name__ == '__main__':
                                        'bold_s2008': bold_s2008, 
                                        'bold_filtered_s2007': bold_filtered_s2007, 
                                        'bold_s2007': bold_s2007, 
-                                       'raw': rn})
+                                       'bold_filtered_s2007_alt': bold_filtered_s2007_alt,
+                                       'bold_s2007_alt': bold_s2007_alt,
+                                       'raw': rn,
+                                       'raw_10ms': rn[::10, :]})  # monitor has sampling period of 1ms
