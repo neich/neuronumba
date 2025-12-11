@@ -2,7 +2,9 @@
 .env
 *code-workspace
 .vscode/settings.json
-*.pyc
+examples/tests/
+**.txt
+**.pdf
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
