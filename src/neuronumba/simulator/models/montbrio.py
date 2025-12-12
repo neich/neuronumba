@@ -3,6 +3,7 @@ import numba as nb
 from typing import Dict, List, Tuple
 
 from neuronumba.basic.attr import Attr
+from neuronumba.fitting.fic.fic import FICHerzog2022
 from neuronumba.numba_tools.types import NDA_f8_2d
 from neuronumba.simulator.models import Model, LinearCouplingModel
 
@@ -28,6 +29,10 @@ class Montbrio(LinearCouplingModel):
 
     observable_vars = Model._build_var_dict([])
     n_observable_vars = len(observable_vars)
+
+    # Automatic FIC computation
+    auto_fic = Attr(default=False, attributes=Model.Type.Model,
+                   doc="Whether to automatically compute inhibitory coupling strength J using FIC")
 
     # Time constants (ms)
     tau_e = Attr(default=10.0, attributes=Model.Type.Model)
@@ -89,6 +94,8 @@ class Montbrio(LinearCouplingModel):
         self.J_N_ie = self.J_ie + self.g_ie * np.log(self.a_e)
         self.J_G_ei = self.J_ei + self.g_ei * np.log(self.a_i)
         self.J_G_ii = self.J_ii + self.g_ii * np.log(self.a_i)
+        if self.auto_fic:
+            self.J = FICHerzog2022().compute_J(self.weights, self.g)
 
     def initial_state(self, n_rois: int) -> np.ndarray:
         """Initialize state variables.
