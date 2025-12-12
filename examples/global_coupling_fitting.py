@@ -1,4 +1,5 @@
 import argparse
+import ast
 import copy
 import csv
 import gc
@@ -843,9 +844,12 @@ def parse_parameter_definitions(param_args):
             if param_type == 'single':
                 if len(p) != 3:
                     raise RuntimeError(f"Parameter definition <{p}> is not valid. Single parameters require a name, type, and value")
-                param_value = float(p[2])
+                try:
+                    param_value = ast.literal_eval(p[2])
+                except (ValueError, SyntaxError):
+                    raise RuntimeError(f"Parameter definition <{p}> is not valid. Cannot parse single value: {p[2]}")
                 param_explore[param_name] = param_value
-                
+
             elif param_type == 'range':
                 if len(p) != 5:
                     raise RuntimeError(f"Parameter definition <{p}> is not valid. Range parameters require a name, type, start, end and step")
