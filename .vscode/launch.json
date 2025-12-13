@@ -13,7 +13,7 @@
             "console": "integratedTerminal",
             "env": {"PYTHONPATH": "..${pathSeparator}src"},
             "args": [
-                "--nsubj", "24",
+                "--nsubj", "21",
                 "--observables", "FC,KS,PS",
                 "--model", "Deco2014", "--obs-var", "re", "--scale-signal", "1000.0",
                 "--param", "list", "g", "1.0", "2.0", "4.0", "8.0",
