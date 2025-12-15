@@ -18,7 +18,7 @@ from numpy.ma.core import repeat
 # Disable JIT compilation for debugging purposes
 # numba.config.DISABLE_JIT = True  
 
-from neuronumba.bold import BoldStephan2008
+from neuronumba.bold import BoldStephan2008, BoldStephan2007, BoldStephan2007Alt
 from neuronumba.observables.sw_fcd import SwFCD
 from neuronumba.simulator.models import Deco2014, ZerlautAdaptationFirstOrder, ZerlautAdaptationSecondOrder, Hopf, Montbrio
 from neuronumba.fitting.fic.fic import FICDeco2014
@@ -163,6 +163,47 @@ class ModelFactory:
     @staticmethod
     def add_model(model_name, creator):
         ModelFactory._creators[model_name] = creator
+
+
+class BoldModelFactory:
+    """Factory for creating BOLD signal models."""
+    
+    _creators = {
+        'Stephan2008': lambda: BoldStephan2008().configure(),
+        'Stephan2007': lambda: BoldStephan2007().configure(),
+        'Stephan2007Alt': lambda: BoldStephan2007Alt().configure(),
+    }
+
+    @staticmethod
+    def create_model(model_name):
+        """
+        Create a BOLD model instance.
+        
+        Args:
+            model_name: Name of the BOLD model ('Stephan2008', 'Stephan2007', 'Stephan2007Alt')
+            
+        Returns:
+            Configured BOLD model instance
+        """
+        if model_name not in BoldModelFactory._creators:
+            raise ValueError(f"Unknown BOLD model: {model_name}. Available: {BoldModelFactory.list_available_models()}")
+        return BoldModelFactory._creators[model_name]()
+
+    @staticmethod
+    def list_available_models():
+        """List all available BOLD model names."""
+        return list(BoldModelFactory._creators.keys())
+    
+    @staticmethod
+    def add_model(model_name, creator):
+        """
+        Add a new BOLD model configuration.
+        
+        Args:
+            model_name: Name of the BOLD model
+            creator: Function that returns a configured BOLD model instance
+        """
+        BoldModelFactory._creators[model_name] = creator
 
 
 class IntegratorFactory:
@@ -400,27 +441,85 @@ def eval_one_param(exec_env, g):
     return dist
 
 
-def compute_g(exec_env, g):
+def _finalize_sim_measures(exec_env, sim_measures, g, save=True):
+    """
+    Common finalization logic for compute_g and compute_g_mp.
+    
+    Computes observable distances, optionally saves results, and returns sim_measures.
+    
+    Args:
+        exec_env: Execution environment dictionary
+        sim_measures: Dictionary containing simulated observable measures
+        g: Global coupling parameter value
+        save: Whether to save results to file (default: True)
+        
+    Returns:
+        sim_measures with distances added
+    """
     out_file = exec_env['out_file']
-    force_recomputations = False if 'force_recomputations' not in exec_env else exec_env['force_recomputations']
-
-    observables = create_observables_dict(exec_env['observables'], exec_env['bpf'])
+    observables = create_observables_dict(exec_env['observables'], exec_env.get('bpf', None))
     processed = exec_env['processed']
-
-    if not force_recomputations and os.path.exists(out_file):
-        print(f"Loading previous data for g={g}")
-        sim_measures = hdf.loadmat(out_file)
-    else:
-        print(f"Starting computation for g={g}")
-        sim_measures = eval_one_param(exec_env, g)
-        sim_measures['g'] = g  # Add the g value to the result
-        compute_observables_distances(sim_measures, processed, observables)
+    
+    sim_measures['g'] = g
+    compute_observables_distances(sim_measures, processed, observables)
+    
+    if save:
+        model_attribues = exec_env.get('model_attributes', {})
+        for key, value in model_attribues.items():
+            sim_measures[f'model_attr_{key}'] = value   
         hdf.savemat(out_file, sim_measures)
+    
+    return sim_measures
 
+
+def _print_distances(exec_env, sim_measures, g):
+    """
+    Print distance metrics for all observables.
+    
+    Args:
+        exec_env: Execution environment dictionary
+        sim_measures: Dictionary containing computed distances
+        g: Global coupling parameter value
+    """
+    observables = create_observables_dict(exec_env['observables'], exec_env.get('bpf', None))
     for ds in observables:
         for dname in observables[ds].distance_measures:
             print(f" {ds} for g={g}: {sim_measures[f'dist_{ds}_{dname}']};", end='', flush=True)
+    print()  # newline after all distances
 
+
+def _try_load_previous(exec_env, g):
+    """
+    Check if previous results exist and should be loaded.
+    
+    Args:
+        exec_env: Execution environment dictionary
+        g: Global coupling parameter value
+        
+    Returns:
+        Tuple of (sim_measures, was_loaded) where sim_measures is the loaded data
+        or None, and was_loaded indicates if data was successfully loaded.
+    """
+    out_file = exec_env['out_file']
+    force_recomputations = exec_env.get('force_recomputations', False)
+    
+    if not force_recomputations and os.path.exists(out_file):
+        print(f"Loading previous data for g={g}")
+        return hdf.loadmat(out_file), True
+    
+    return None, False
+
+
+def compute_g(exec_env, g):
+    sim_measures, was_loaded = _try_load_previous(exec_env, g)
+    
+    if not was_loaded:
+        print(f"Starting computation for g={g}")
+        sim_measures = eval_one_param(exec_env, g)
+        sim_measures = _finalize_sim_measures(exec_env, sim_measures, g)
+
+    if 'verbose' in exec_env and exec_env['verbose']:
+        _print_distances(exec_env, sim_measures, g)
     return sim_measures
 
 
@@ -580,20 +679,22 @@ def execute_multiprocessing_simulation_raw(exec_env, g, nproc):
 def compute_g_mp(exec_env, g, nproc):
     out_file = exec_env['out_file']
     
+    # Check for previously computed results
+    sim_measures, was_loaded = _try_load_previous(exec_env, g)
+    if was_loaded:
+        return {}, sim_measures
+    
+    print(f"Starting computation for g={g}")
     simulated_bolds, numerical_error = execute_multiprocessing_simulation_bold(exec_env, g, nproc)
 
     if numerical_error:
         sim_measures = {"error": "Nan or Inf in bold signals"}
         print(f"EXECUTOR --- NUMERICAL ERROR for {out_file}")
+        hdf.savemat(out_file, sim_measures)
     else:
         sim_measures = process_bold_signals(simulated_bolds, exec_env['observables'], exec_env.get('bpf', None), exec_env.get('verbose', True))
-        sim_measures['g'] = g
-        processed = exec_env['processed']
+        sim_measures = _finalize_sim_measures(exec_env, sim_measures, g)
 
-        observables = create_observables_dict(exec_env['observables'], exec_env.get('bpf', None))
-        compute_observables_distances(sim_measures, processed, observables)
-
-    hdf.savemat(out_file, sim_measures)
     return simulated_bolds, sim_measures
 
 
@@ -603,37 +704,75 @@ def compute_observables_distances(sim_measures, processed, observables):
             sim_measures[f'dist_{ds}_{dname}'] = dist.distance(sim_measures[ds], processed[ds])
 
 
-def plot_fitting_distances(out_file_path, file_pattern, show=True):
+def _extract_model_attrs(mat_data):
     """
-    Scan fitting result files and generate a plot with distance metrics vs global coupling (G).
+    Extract model attributes from a loaded mat file.
     
     Args:
-        out_file_path: Path containing fitting_g*.mat files and where the plot will be saved
-        show: Whether to display the plot (default: True)
+        mat_data: Dictionary loaded from mat file
         
     Returns:
-        Path to the saved plot file, or None if no data to plot
+        Dictionary of model attributes {attr_name: attr_value}
     """
-    # Scan for fitting files and collect distance data
-    file_list = glob.glob(os.path.join(out_file_path, file_pattern))
-    data = {}
-    for file in file_list:
-        print(f"Found file: {file}", flush=True)
-        m = hdf.loadmat(file)
-        if 'g' not in m:
-            print(f"   Skipping file {file} due to lack of g data", flush=True)
-            continue
-        g = m['g']
-        for key in m.keys():
-            if key.startswith('dist_'):
-                if key not in data:
-                    data[key] = []
-                data[key].append((g, m[key]))
+    attrs = {}
+    for key in mat_data.keys():
+        if key.startswith('model_attr_'):
+            # Extract the attribute name without the prefix
+            attr_name = key[len('model_attr_'):]
+            value = mat_data[key]
+            # Convert numpy arrays to hashable types for grouping
+            if isinstance(value, np.ndarray):
+                if value.size == 1:
+                    value = value.item()
+                else:
+                    value = tuple(value.flatten())
+            attrs[attr_name] = value
+    return attrs
+
+
+def _attrs_to_key(attrs):
+    """
+    Convert attributes dictionary to a hashable key for grouping.
     
-    if len(data) == 0:
-        print("No distance data found to plot.")
-        return None
+    Args:
+        attrs: Dictionary of attributes
+        
+    Returns:
+        Tuple of sorted (key, value) pairs
+    """
+    return tuple(sorted(attrs.items()))
+
+
+def _attrs_to_label(attrs):
+    """
+    Convert attributes dictionary to a human-readable label.
     
+    Args:
+        attrs: Dictionary of attributes
+        
+    Returns:
+        String label for the attribute combination
+    """
+    if not attrs:
+        return "default"
+    parts = [f"{k}={v}" for k, v in sorted(attrs.items())]
+    return ", ".join(parts)
+
+
+def _plot_single_group(out_file_path, data, group_label, group_suffix, show=True):
+    """
+    Generate a single plot for a group of fitting results.
+    
+    Args:
+        out_file_path: Path where the plot will be saved
+        data: Dictionary of {dist_key: [(g, dist_value), ...]}
+        group_label: Human-readable label for the group
+        group_suffix: Safe filename suffix for the group
+        show: Whether to display the plot
+        
+    Returns:
+        Path to the saved plot file
+    """
     import matplotlib.pyplot as plt
     
     n_plots = len(data)
@@ -641,6 +780,10 @@ def plot_fitting_distances(out_file_path, file_pattern, show=True):
     n_rows = (n_plots + n_cols - 1) // n_cols  # Ceiling division
     
     fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows))
+    
+    # Add a super title with the group label
+    if group_label != "default":
+        fig.suptitle(group_label, fontsize=14, fontweight='bold', y=1.02)
     
     # Handle case where axes is not a 2D array
     if n_plots == 1:
@@ -682,8 +825,11 @@ def plot_fitting_distances(out_file_path, file_pattern, show=True):
     
     plt.tight_layout()
     
-    # Save the figure
-    plot_file = os.path.join(out_file_path, 'fitting_distances_plot.png')
+    # Save the figure with group suffix
+    if group_suffix:
+        plot_file = os.path.join(out_file_path, f'fitting_distances_plot_{group_suffix}.png')
+    else:
+        plot_file = os.path.join(out_file_path, 'fitting_distances_plot.png')
     plt.savefig(plot_file, dpi=300, bbox_inches='tight')
     print(f"Plot saved to: {plot_file}")
     
@@ -693,6 +839,81 @@ def plot_fitting_distances(out_file_path, file_pattern, show=True):
         plt.close(fig)
     
     return plot_file
+
+
+def plot_fitting_distances(out_file_path, file_pattern, show=True):
+    """
+    Scan fitting result files and generate plots with distance metrics vs global coupling (G).
+    
+    Files are grouped by their model_attr_* attributes, and a separate plot is generated
+    for each unique combination of attribute values.
+    
+    Args:
+        out_file_path: Path containing fitting_g*.mat files and where the plot will be saved
+        file_pattern: Glob pattern for finding fitting files
+        show: Whether to display the plots (default: True)
+        
+    Returns:
+        List of paths to saved plot files, or None if no data to plot
+    """
+    # Scan for fitting files and collect distance data grouped by attributes
+    file_list = glob.glob(os.path.join(out_file_path, file_pattern))
+    
+    # Dictionary: {attrs_key: {dist_key: [(g, value), ...]}}
+    grouped_data = {}
+    # Dictionary: {attrs_key: attrs_dict} for labels
+    attrs_lookup = {}
+    
+    for file in file_list:
+        print(f"Found file: {file}", flush=True)
+        m = hdf.loadmat(file)
+        if 'g' not in m:
+            print(f"   Skipping file {file} due to lack of g data", flush=True)
+            continue
+        
+        g = m['g']
+        attrs = _extract_model_attrs(m)
+        attrs_key = _attrs_to_key(attrs)
+        
+        if attrs_key not in grouped_data:
+            grouped_data[attrs_key] = {}
+            attrs_lookup[attrs_key] = attrs
+        
+        for key in m.keys():
+            if key.startswith('dist_'):
+                if key not in grouped_data[attrs_key]:
+                    grouped_data[attrs_key][key] = []
+                grouped_data[attrs_key][key].append((g, m[key]))
+    
+    if len(grouped_data) == 0:
+        print("No distance data found to plot.")
+        return None
+    
+    print(f"\nFound {len(grouped_data)} attribute group(s) to plot:")
+    for attrs_key in grouped_data:
+        label = _attrs_to_label(attrs_lookup[attrs_key])
+        print(f"  - {label}")
+    print()
+    
+    # Generate a plot for each group
+    plot_files = []
+    for idx, (attrs_key, data) in enumerate(sorted(grouped_data.items())):
+        attrs = attrs_lookup[attrs_key]
+        group_label = _attrs_to_label(attrs)
+        
+        # Create a safe filename suffix from attributes
+        if attrs:
+            suffix_parts = [f"{k}_{v}" for k, v in sorted(attrs.items())]
+            group_suffix = "_".join(suffix_parts)
+            # Make filename safe by replacing problematic characters
+            group_suffix = group_suffix.replace('.', 'p').replace(' ', '_').replace(',', '_')
+        else:
+            group_suffix = "" if len(grouped_data) == 1 else f"group_{idx}"
+        
+        plot_file = _plot_single_group(out_file_path, data, group_label, group_suffix, show)
+        plot_files.append(plot_file)
+    
+    return plot_files
 
 
 def run(args):
@@ -771,6 +992,7 @@ def run(args):
 
     n_subj = args.nsubj if args.nsubj is not None else n_frmis
 
+    bold_model = BoldModelFactory.create_model(args.bold_model)
 
     if args.g is not None and not args.use_mp:
         # Single point execution for debugging purposes
@@ -784,7 +1006,7 @@ def run(args):
             'observables': args.observables,
             'obs_var': args.obs_var,
             'bold': bold,
-            'bold_model': BoldStephan2008().configure(),
+            'bold_model': bold_model,
             'out_file': out_file_name_pattern.format(np.round(args.g, decimals=3)),
             'num_subjects': n_subj,
             't_max_neuronal': t_max_neuronal,
@@ -804,7 +1026,7 @@ def run(args):
             'observables': args.observables,
             'obs_var': args.obs_var,
             'bold': bold,
-            'bold_model': BoldStephan2008().configure(),
+            'bold_model': bold_model,
             'out_file': out_file_name_pattern.format(np.round(args.g, decimals=3)),
             'num_subjects': n_subj,
             't_max_neuronal': t_max_neuronal,
@@ -838,7 +1060,7 @@ def run(args):
                     'observables': args.observables,
                     'obs_var': args.obs_var,
                     'bold': bold,
-                    'bold_model': BoldStephan2008().configure(),
+                    'bold_model': bold_model,
                     'out_file': out_file_name_pattern.format(np.round(gf, decimals=3)),
                     'num_subjects': n_subj,
                     't_max_neuronal': t_max_neuronal,
@@ -880,7 +1102,7 @@ def run(args):
             'observables': args.observables,
             'obs_var': args.obs_var,
             'bold': bold,
-            'bold_model': BoldStephan2008().configure(),
+            'bold_model': bold_model,
             'num_subjects': n_subj,
             't_max_neuronal': t_max_neuronal,
             't_warmup': t_warmup,
@@ -1080,6 +1302,7 @@ def gen_arg_parser():
     parser.add_argument("--model", type=str, default='Deco2014', help="Model to use (Hopf, Deco2014, Montbrio, Zerlaut1O, Zerlaut2O)")
     parser.add_argument("--obs-var", type=str, help="Model variable to observe")
     parser.add_argument("--observables", nargs='+', type=str, help="Pairs (comma separated) of observables,distance to use (FC, phFCD, swFCD),(PS, KS)")
+    parser.add_argument("--bold-model", type=str, default='Stephan2007', help="BOLD Model to use (Stephan2008, Stephan2007, Stephan2007Alt)")
     parser.add_argument("--out-path", type=str, required=True, help="Path to folder for output results")
     parser.add_argument("--tr", type=float, help="Time resolution of fMRI scanner (seconds)")
     parser.add_argument("--sc-scaling", type=float, default=0.2, help="Scaling factor for the SC matrix")
