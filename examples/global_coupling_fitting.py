@@ -603,10 +603,114 @@ def compute_observables_distances(sim_measures, processed, observables):
             sim_measures[f'dist_{ds}_{dname}'] = dist.distance(sim_measures[ds], processed[ds])
 
 
+def plot_fitting_distances(out_file_path, file_pattern, show=True):
+    """
+    Scan fitting result files and generate a plot with distance metrics vs global coupling (G).
+    
+    Args:
+        out_file_path: Path containing fitting_g*.mat files and where the plot will be saved
+        show: Whether to display the plot (default: True)
+        
+    Returns:
+        Path to the saved plot file, or None if no data to plot
+    """
+    # Scan for fitting files and collect distance data
+    file_list = glob.glob(os.path.join(out_file_path, file_pattern))
+    data = {}
+    for file in file_list:
+        print(f"Found file: {file}", flush=True)
+        m = hdf.loadmat(file)
+        if 'g' not in m:
+            print(f"   Skipping file {file} due to lack of g data", flush=True)
+            continue
+        g = m['g']
+        for key in m.keys():
+            if key.startswith('dist_'):
+                if key not in data:
+                    data[key] = []
+                data[key].append((g, m[key]))
+    
+    if len(data) == 0:
+        print("No distance data found to plot.")
+        return None
+    
+    import matplotlib.pyplot as plt
+    
+    n_plots = len(data)
+    n_cols = min(3, n_plots)  # Maximum 3 columns
+    n_rows = (n_plots + n_cols - 1) // n_cols  # Ceiling division
+    
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows))
+    
+    # Handle case where axes is not a 2D array
+    if n_plots == 1:
+        axes = np.array([[axes]])
+    elif n_rows == 1:
+        axes = axes.reshape(1, -1)
+    elif n_cols == 1:
+        axes = axes.reshape(-1, 1)
+    
+    for idx, (key, values) in enumerate(sorted(data.items())):
+        row = idx // n_cols
+        col = idx % n_cols
+        ax = axes[row, col]
+        
+        # Sort by g value for proper line plotting
+        sorted_values = sorted(values, key=lambda x: x[0])
+        g_values = [v[0] for v in sorted_values]
+        dist_values = [v[1] for v in sorted_values]
+        
+        ax.plot(g_values, dist_values, 'o-', markersize=6, linewidth=1.5)
+        ax.set_xlabel('Global Coupling (G)', fontsize=10)
+        ax.set_ylabel('Distance', fontsize=10)
+        ax.set_title(key.replace('dist_', ''), fontsize=12)
+        ax.grid(True, alpha=0.3)
+        
+        # Mark minimum value
+        min_idx = np.argmin(dist_values)
+        ax.axvline(x=g_values[min_idx], color='r', linestyle='--', alpha=0.5)
+        ax.scatter([g_values[min_idx]], [dist_values[min_idx]], color='r', s=100, zorder=5, marker='*')
+        ax.annotate(f'min: G={g_values[min_idx]:.2f}', 
+                   xy=(g_values[min_idx], dist_values[min_idx]),
+                   xytext=(5, 5), textcoords='offset points', fontsize=8)
+    
+    # Hide unused subplots
+    for idx in range(n_plots, n_rows * n_cols):
+        row = idx // n_cols
+        col = idx % n_cols
+        axes[row, col].set_visible(False)
+    
+    plt.tight_layout()
+    
+    # Save the figure
+    plot_file = os.path.join(out_file_path, 'fitting_distances_plot.png')
+    plt.savefig(plot_file, dpi=300, bbox_inches='tight')
+    print(f"Plot saved to: {plot_file}")
+    
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
+    
+    return plot_file
+
+
 def run(args):
 
-    # This is the data related to the dataset that we are going to load.
-    # For your dataset, you need to figure these values
+    out_file_path = args.out_path
+    if not os.path.exists(out_file_path):
+        os.makedirs(out_file_path)
+
+    if args.plot_g:
+        plot_fitting_distances(out_file_path, "fitting_g*.mat")
+        exit(0)
+
+    # Check for some required parameters when not plotting
+    if args.obs_var is None:
+        raise RuntimeError("Please provide the --obs-var parameter with the name of the observable variable to simulate")
+    
+    if args.observables is None or len(args.observables) == 0:
+        raise RuntimeError("Please provide at least one observable using the --observables parameter")
 
     # Time resolution parameter of the fMRI data (seconds). Each dataset will have its own tr value
     # depending on the scanner setting used to capture the BOLD signal
@@ -642,7 +746,6 @@ def run(args):
     if args.sc_sigma > 0.0:
         sc_norm = lambda : sc_norm + np.random.normal(loc=0.0, scale=args.sc_sigma*np.max(sc_norm), size=sc_norm.shape)
 
-
     bold = True
     if args.model not in ModelFactory.list_available_models():
         raise ValueError(f"Model <{args.model}> not supported!")
@@ -654,10 +757,6 @@ def run(args):
     bpf = BandPassFilter(tr=tr, k=args.bpf[0], flp=args.bpf[1], fhi=args.bpf[2]) if args.bpf is not None else None
 
     all_fMRI = {s: d for s, d in enumerate(timeseries)}
-
-    out_file_path = os.path.join(args.out_path, f"sim_{args.model}_{'bpf' if bpf else 'nobpf'}")    
-    if not os.path.exists(out_file_path):
-        os.makedirs(out_file_path)
 
     # Process (or load) empirical data
     emp_filename = os.path.join(out_file_path, 'fNeuro_emp.mat')
@@ -672,29 +771,8 @@ def run(args):
 
     n_subj = args.nsubj if args.nsubj is not None else n_frmis
 
-    if args.plot_g:
-        # Show distances for all G files generated
-        file_list = glob.glob(os.path.join(out_file_path, 'fitting_g*.mat'))
-        y = {}
-        for o_name in observables.keys():
-            y[o_name] = []
-        x = []
-        for f in sorted(file_list):
-            m = hdf.loadmat(f)
-            g = m['g']
-            for o_name in y.keys():
-                d = m[f'dist_{o_name}']
-                print(f"Distance for g={g} and observable {o_name} = {d}", flush=True)
-                y[o_name].append(d)
-            x.append(g)
 
-        for o_name, ys in y.items():
-            fig, ax = plt.subplots()
-            ax.plot(x, ys)
-            ax.set_title(f"Distance for observable {o_name}")
-            plt.savefig(os.path.join(out_file_path, f"fig_g_optim_{o_name}.png"), dpi=300)
-
-    elif args.g is not None and not args.use_mp:
+    if args.g is not None and not args.use_mp:
         # Single point execution for debugging purposes
         compute_g({
             'verbose':True,
@@ -912,11 +990,11 @@ def process_model_parameters(param_set):
     
     for p in model_params_cli:
         pname = p[0]
-        if '-' not in pname:
+        if ',' not in pname:
             model_params.append(p)
         else:
             # Handle hyphenated parameters by splitting
-            ps = p[0].split('-')
+            ps = p[0].split(',')
             for pp in ps:
                 model_params.append((pp, p[1]))
     
@@ -939,7 +1017,11 @@ def generate_parameter_filename(param_set, prefix='fitting'):
     """
     fname = prefix
     for p in param_set:
-        fname += f"_{p[0]}_{np.round(p[1], decimals=2)}"
+        x = p[1]
+        if isinstance(x, (bool, int)):        
+            fname += f"_{p[0]}_{p[1]}"
+        elif isinstance(x, float):
+            fname += f"_{p[0]}_{np.round(p[1], decimals=2)}"
     fname += '.mat'
     return fname
 
@@ -994,16 +1076,16 @@ def gen_arg_parser():
     parser.add_argument("--nsubj", type=int, help="Number of subjects for the simulations")
     parser.add_argument("--g", type=float, help="Single point execution for a global coupling value")
     parser.add_argument("--g-range", nargs=3, type=float, help="Parameter sweep range for G (start, end, step)")
-    parser.add_argument("--bpf", nargs=3, type=float, required=False, help="Band pass filter to apply to BOLD signal (k, lp freq, hp freq)")
+    parser.add_argument("--bpf", nargs=3, type=float, help="Band pass filter to apply to BOLD signal (k, lp freq, hp freq)")
     parser.add_argument("--model", type=str, default='Deco2014', help="Model to use (Hopf, Deco2014, Montbrio, Zerlaut1O, Zerlaut2O)")
-    parser.add_argument("--obs-var", type=str, required=True, help="Model variable to observe")
-    parser.add_argument("--observables", nargs='+', type=str, required=True, help="Pairs (comma separated) of observables,distance to use (FC, phFCD, swFCD),(PS, KS)")
+    parser.add_argument("--obs-var", type=str, help="Model variable to observe")
+    parser.add_argument("--observables", nargs='+', type=str, help="Pairs (comma separated) of observables,distance to use (FC, phFCD, swFCD),(PS, KS)")
     parser.add_argument("--out-path", type=str, required=True, help="Path to folder for output results")
     parser.add_argument("--tr", type=float, help="Time resolution of fMRI scanner (seconds)")
     parser.add_argument("--sc-scaling", type=float, default=0.2, help="Scaling factor for the SC matrix")
     parser.add_argument("--sc-sigma", type=float, default=0.0, help="Sigma scale value to generate noise for the SC matrix")
     parser.add_argument("--scale-signal", type=float, default=1.0, help="Scaling signal factor for unit conversion")
-    parser.add_argument("--tmax", type=float, required=False, help="Override simulation time (seconds)")
+    parser.add_argument("--tmax", type=float, help="Override simulation time (seconds)")
     parser.add_argument("--fmri-path", type=str, help="Path to fMRI timeseries data")
     parser.add_argument("--plot-g", action='store_true', default=False, help="Plot G optimization results")
     parser.add_argument("--param", action='append', nargs="+", type=str, help="Parameter values to use in the model, e.g. --param single tau_e 10.0 --param range J_ee 5.0 15.0 1.0")
@@ -1012,16 +1094,6 @@ def gen_arg_parser():
 
 if __name__ == '__main__':
     parser = gen_arg_parser()
-    args = parser.parse_args()  # for example, for a single test, use --ge-range 1.0 10.0 1.0
-    if args.full_scan:
-        models = ['Deco2014', 'Hopf', 'Montbrio', 'Zerlaut2O']
-        observables = ['FC', 'phFCD', 'swFCD']
-        measures = ['PS', 'KS']
-        args = [sys.argv[0], '--nproc', '5', '--g-range', '1', '20', '0.2', '--tr', '720', '--tmax', '600', '--fmri-path', './Data_Raw/ebrains_popovych', '--out-path', './Data_Produced/ebrains_popovych']
-        for model, observable, measure in list(itertools.product(models, observables, measures)):
-            sys.argv = args + ['--model', model, '--observable', observable, '--measure', measure]
-            print(f'Running fitting for model {model}, observable {observable}, measure {measure}')
-            run()
-    else:
-        run(args)
+    args = parser.parse_args()
+    run(args)
 

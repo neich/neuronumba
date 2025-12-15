@@ -22,6 +22,7 @@ from numba import njit
 from neuronumba.basic.attr import Attr
 from neuronumba.bold.base_bold import Bold
 
+from neuronumba.tools.compat_typing import override
 
 class BoldStephan2007(Bold):
     t_min = Attr(default=20, required=False)  # (s)

@@ -14,13 +14,14 @@
             "env": {"PYTHONPATH": "..${pathSeparator}src"},
             "args": [
                 "--nsubj", "21",
-                "--observables", "FC,KS,PS",
-                "--model", "Deco2014", "--obs-var", "re", "--scale-signal", "1000.0",
+                "--bpf", "2", "0.005", "0.08",
+                "--observables", "FC,KS,PS", "swFCD,KS,PS", "phFCD,KS,PS",
+                "--model", "Deco2014", "--obs-var", "re",
                 "--param", "list", "g", "1.0", "2.0", "4.0", "8.0",
                 "--tr", "720",
                 "--tmax", "600",
                 "--fmri-path", "./Data_Raw/ebrains_popovych",
-                "--out-path", "./Data_Produced/ebrains_popovych"
+                "--out-path", "./Data_Produced/ebrains_popovych/deco_bpf_explore"
             ]
         },
         {
@@ -33,10 +34,24 @@
             "env": {"PYTHONPATH": "..${pathSeparator}src"},
             "args": [
                 "--plot-g",
-                "--model", "Deco2014",
+                "--out-path", "./Data_Produced/full_scan_montbrio_no_fic"
+            ]
+        },
+        {
+            "name": "Gen BOLD",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${fileDirname}${pathSeparator}..${pathSeparator}examples",
+            "program": ".${pathSeparator}gen_bold.py",
+            "console": "integratedTerminal",
+            "env": {"PYTHONPATH": "..${pathSeparator}src"},
+            "args": [
+                "--model", "Montbrio",
+                "--obs-var", "r_e",
+                "--param", "single", "g", "1.0",
+                "--param", "single", "auto_fic", "False",
                 "--tr", "720",
-                "--observables", "swFCD", "FC", "phFCD",
-                "--fmri-path", "./Data_Raw/ebrains_popovych",
+                "--sc-matrix", "./Data_Raw/ebrains_popovych/000/Counts.csv",
                 "--out-path", "./Data_Produced/ebrains_popovych"
             ]
         }
