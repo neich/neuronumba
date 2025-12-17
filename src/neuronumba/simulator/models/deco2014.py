@@ -147,7 +147,7 @@ class Deco2014(LinearCouplingModel):
     def _init_dependant(self):
         super()._init_dependant()
         if self.auto_fic and not self._attr_defined('J'):
-            self.J = FICHerzog2022().compute_J(self.weights, self.g)
+            self.J = FICHerzog2022().compute_J(self.weights)
 
     @property
     def get_state_vars(self) -> Dict[str, int]:
