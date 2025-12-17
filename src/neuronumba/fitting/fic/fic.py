@@ -7,15 +7,15 @@ from neuronumba.simulator.simulator import simulate_nodelay
 class FIC(HasAttr):
     dim = Attr(required=True)
     
-    def compute_J(self, sc, g):
+    def compute_J(self, sc):
         raise NotImplementedError
     
     
 class FICHerzog2022(FIC):
     alpha = Attr(default=0.75)
     
-    def compute_J(self, sc, g):
-        J = self.alpha * g * np.sum(sc, axis=0) + 1
+    def compute_J(self, sc):
+        J = self.alpha * np.sum(sc, axis=0) + 1
         return J
 
 class FICDeco2014(FIC):
@@ -107,7 +107,7 @@ class FICDeco2014(FIC):
         if self.very_verbose: print("]")
         return N - num_above_error
 
-    def compute_J(self, sc, g):
+    def compute_J(self, sc):
         # simulation fixed parameters:
         # ----------------------------
         dt = 0.1
@@ -162,7 +162,7 @@ class FICDeco2014(FIC):
                 if self.verbose: print(', ', end='', flush=True)
 
         if self.verbose:
-            print("Final (we={}): {} trials, with {}/{} nodes solved at trial {}".format(g, k, bestJCount, N, bestTrial))
+            print("Final: {} trials, with {}/{} nodes solved at trial {}".format(k, bestJCount, N, bestTrial))
         if self.verbose:
             print('DONE!') if flagJ == N else print('FAILED!!!')
         return bestJ

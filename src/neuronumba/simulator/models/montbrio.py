@@ -95,7 +95,7 @@ class Montbrio(LinearCouplingModel):
         self.J_G_ei = self.J_ei + self.g_ei * np.log(self.a_i)
         self.J_G_ii = self.J_ii + self.g_ii * np.log(self.a_i)
         if self.auto_fic:
-            self.J = FICHerzog2022().compute_J(self.weights, self.g)
+            self.J = self.J * FICHerzog2022().compute_J(self.weights)
 
     def initial_state(self, n_rois: int) -> np.ndarray:
         """Initialize state variables.
