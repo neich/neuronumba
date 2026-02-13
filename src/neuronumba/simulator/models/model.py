@@ -38,7 +38,7 @@ class Model(HasAttr):
             cls = type(self)
             p, p_aux = cls._build_parameter_enum()
             setattr(cls, 'P', p)
-            setattr(cls, 'P_aux', P_aux)
+            setattr(cls, 'P_aux', p_aux)
         super().configure(**kwargs)
         return self
 
