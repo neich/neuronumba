@@ -1,21 +1,21 @@
 import numpy as np
 
 from neuronumba.basic.attr import Attr, HasAttr
-from neuronumba.simulator.integrators import EulerStochastic
+from neuronumba.simulator.integrators import EulerStochasticclaude
 from neuronumba.simulator.simulator import simulate_nodelay
 
 class FIC(HasAttr):
     dim = Attr(required=True)
     
-    def compute_J(self, sc):
+    def compute_J(self, sc, g):
         raise NotImplementedError
     
     
 class FICHerzog2022(FIC):
     alpha = Attr(default=0.75)
     
-    def compute_J(self, sc):
-        J = self.alpha * np.sum(sc, axis=0) + 1
+    def compute_J(self, sc, g):
+        J = self.alpha * g * np.sum(sc, axis=0) + 1
         return J
 
 class FICDeco2014(FIC):
@@ -107,7 +107,7 @@ class FICDeco2014(FIC):
         if self.very_verbose: print("]")
         return N - num_above_error
 
-    def compute_J(self, sc):
+    def compute_J(self, sc, g):
         # simulation fixed parameters:
         # ----------------------------
         dt = 0.1
