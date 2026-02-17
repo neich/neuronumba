@@ -2,6 +2,8 @@ import numpy as np
 import numba as nb
 from typing import Dict, List, Tuple
 
+from overrides import overrides
+
 from neuronumba.basic.attr import Attr
 from neuronumba.fitting.fic.fic import FICHerzog2022
 from neuronumba.numba_tools.types import NDA_f8_2d
@@ -86,6 +88,7 @@ class Montbrio(LinearCouplingModel):
         """Get list of coupling variable indices."""
         return Montbrio.c_vars
 
+    @overrides
     def _init_dependant(self) -> None:
         """Initialize dependent parameters based on model parameters."""
         super(Montbrio, self)._init_dependant()
@@ -95,7 +98,7 @@ class Montbrio(LinearCouplingModel):
         self.J_G_ei = self.J_ei + self.g_ei * np.log(self.a_i)
         self.J_G_ii = self.J_ii + self.g_ii * np.log(self.a_i)
         if self.auto_fic:
-            self.J = self.J * FICHerzog2022().compute_J(self.weights)
+            self.J = self.J * FICHerzog2022().compute_J(self.weights, self.g)
 
     def initial_state(self, n_rois: int) -> np.ndarray:
         """Initialize state variables.
