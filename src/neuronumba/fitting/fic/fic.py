@@ -1,7 +1,7 @@
 import numpy as np
 
 from neuronumba.basic.attr import Attr, HasAttr
-from neuronumba.simulator.integrators import EulerStochasticclaude
+from neuronumba.simulator.integrators import EulerStochastic
 from neuronumba.simulator.simulator import simulate_nodelay
 
 class FIC(HasAttr):
