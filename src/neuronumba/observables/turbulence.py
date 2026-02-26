@@ -5,6 +5,7 @@ from scipy import signal
 
 from neuronumba.basic.attr import Attr
 from neuronumba.observables.base_observable import ObservableFMRI
+from neuronumba.observables.distance_rule import DistanceRule, EDR_distance_rule
 from neuronumba.tools import matlab_tricks
 
 
@@ -24,27 +25,25 @@ class Turbulence(ObservableFMRI):
     Code by Gustavo Deco, 2020.
     Translated by Marc Gregoris, May 21, 2024
     Refactored by Gustavo Patow, June 9, 2024
+    Refactored by Giuseppe Pau, December 2025
     """
 
     lambda_val = Attr(default=0.18, required=False)
     cog_dist = Attr(required=True)
     c_exp = Attr(dependant=True)
     rr = Attr(dependant=True)
+    distance_rule = Attr(default=EDR_distance_rule(lambda_val=lambda_val), dependant=True)
 
+    # Ensure conceptual consistency: the model lambda must match the distance rule lambda
     def _init_dependant(self):
         super()._init_dependant()
-        self._compute_exp_law()
 
-    def _compute_exp_law(self):
-        N = self.cog_dist.shape[0]
-        # Compute the distance matrix
-        rr = np.zeros((N, N))
-        for i in range(N):
-            for j in range(N):
-                rr[i, j] = np.linalg.norm(self.cog_dist[i, :] - self.cog_dist[j, :])
-        # Build the exponential-distance matrix
-        c_exp = np.exp(-self.lambda_val * rr)
-        np.fill_diagonal(c_exp, 1)
+        if not isinstance(self.distance_rule, DistanceRule):
+            self.distance_rule = EDR_distance_rule(lambda_val=self.lambda_val)
+
+        self.distance_rule.lambda_val = self.lambda_val
+        rr, c_exp = self.distance_rule.compute(self.cog_dist)
+
         self.rr = rr
         self.c_exp = c_exp
 
@@ -57,7 +56,7 @@ class Turbulence(ObservableFMRI):
         # bold_signal (ndarray): Bold signal with shape (n_rois, n_time_samples)
         n_rois, t_max = bold_signal.shape
         # Initialization of results-storing data
-        enstrophy = np.zeros((n_rois, t_max))
+        entrophy = np.zeros((n_rois, t_max))
         Phases = np.zeros((n_rois, t_max))
 
         # Hilbert transform to calculate the instantaneous phases per node
@@ -69,25 +68,25 @@ class Turbulence(ObservableFMRI):
         # Calculate Kuramoto LOCAL order parameter for all nodes
         for i in range(n_rois):
             sumphases = np.nansum(np.tile(self.c_exp[i, :], (t_max,1)).T * np.exp(1j * Phases), axis=0) / np.nansum(self.c_exp[i, :])
-            enstrophy[i] = np.abs(sumphases)  # Kuramoto local order parameter
+            entrophy[i] = np.abs(sumphases)  # Kuramoto local order parameter
 
         # Calculate Kuramoto global order parameter and metastability for all nodes
         gKoP = np.nanmean(np.abs(np.sum(np.exp(1j * Phases), axis=0)) / n_rois)  # Global Kuramoto parameter (synchronization) for all nodes
         Meta = np.nanstd(np.abs(np.sum(np.exp(1j * Phases), axis=0)) / n_rois)  # Global metastability for all nodes
 
-        R_spa_time = np.nanstd(enstrophy)  # Amplitude turbulence (std of Kuramoto local order parameter across nodes and timepoints)
-        R_spa = np.nanstd(enstrophy, axis=1).T  # Amplitude turbulence (std of Kuramoto local order parameter per timepoint across nodes)
-        R_time = np.nanstd(enstrophy, axis=0)  # Amplitude turbulence (std of Kuramoto local order parameter per node across timepoints)
+        R_spa_time = np.nanstd(entrophy)  # Amplitude turbulence (std of Kuramoto local order parameter across nodes and timepoints)
+        R_spa = np.nanstd(entrophy, axis=1).T  # Amplitude turbulence (std of Kuramoto local order parameter per timepoint across nodes)
+        R_time = np.nanstd(entrophy, axis=0)  # Amplitude turbulence (std of Kuramoto local order parameter per node across timepoints)
         acf_spa = matlab_tricks.autocorr(R_spa, 100)  # Autocorrelation of R in space
         acf_time = matlab_tricks.autocorr(R_time, 100)  # Autocorrelation of R in time
 
         return {
-            'Rspatime': R_spa_time,  # Amplitude turbulence
-            'Rspa': R_spa.T,         # Amplitude turbulence across nodes per timepoint
-            'Rtime': R_time,         # Amplitude turbulence across timepoints per node
-            'acfspa': acf_spa,       # Autocorrelation of R across space
-            'acftime': acf_time,     # Autocorrelation of R across time
-            'enstrophy': enstrophy,  # Kuramoto local order parameter
-            'gKoP': gKoP,            # Global Kuramoto parameter (synchronization)
-            'Meta': Meta             # Global metastability
+            'R_spa_time': R_spa_time, # Amplitude turbulence
+            'R_spa': R_spa.T,         # Amplitude turbulence across nodes per timepoint
+            'R_time': R_time,         # Amplitude turbulence across timepoints per node
+            'acf_spa': acf_spa,       # Autocorrelation of R across space
+            'acf_time': acf_time,     # Autocorrelation of R across time
+            'entrophy': entrophy,     # Kuramoto local order parameter
+            'gKoP': gKoP,             # Global Kuramoto parameter (synchronization)
+            'Meta': Meta              # Global metastability
         }
