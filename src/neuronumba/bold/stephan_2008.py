@@ -186,7 +186,9 @@ class BoldStephan2008(Bold):
         t_min = self.t_min
         b = Bold_Stephan2008_compute_bold(signal)
         step = int(np.round(self.tr / dt))  # each step is the length of the TR, in milliseconds
-        bds = b[step - 1::step, :]
+        # .copy() is critical: the slice is a view that would keep the entire
+        # b array alive in memory
+        bds = b[step - 1::step, :].copy()
         return bds
 
 
