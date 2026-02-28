@@ -1,10 +1,11 @@
 **/.idea
 .env
 *code-workspace
-.vscode/settings.json
+.vscode/
 examples/tests/
 **.txt
 **.pdf
+CLAUDE.md
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
