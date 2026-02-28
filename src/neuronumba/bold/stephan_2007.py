@@ -127,7 +127,9 @@ class BoldStephan2007(Bold):
 
         b = Bold_Stephan2007_compute_bold(signal)
         step = int(np.round(self.tr / dt))  # each step is the length of the TR, in milliseconds
-        bds = b[step - 1::step, :]
+        # .copy() is critical: the slice is a view that would keep the entire
+        # b array alive in memory.
+        bds = b[step - 1::step, :].copy()
         return bds
 
 
@@ -159,7 +161,9 @@ class BoldStephan2007Alt(Bold):
                                     self.taus, self.tauf, self.tauo, self.alpha,
                                     self.Eo, self.TE, self.vo, self.r0, self.theta0)
         step = int(np.round(self.tr / dt))  # each step is the length of the TR, in milliseconds
-        bds = b[step - 1::step, :]
+        # .copy() is critical: the slice is a view that would keep the entire
+        # b array alive in memory.
+        bds = b[step - 1::step, :].copy()
         return bds
 
 

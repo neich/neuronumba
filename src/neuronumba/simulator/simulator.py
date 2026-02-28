@@ -8,7 +8,7 @@ from neuronumba.numba_tools.types import NDA_f8_2d, NDA_f8_1d
 from neuronumba.simulator.connectivity import Connectivity
 from neuronumba.simulator.history import HistoryNoDelays
 from neuronumba.simulator.integrators import EulerStochastic
-from neuronumba.simulator.monitors import TemporalAverage
+from neuronumba.simulator.monitors import RawSubSample, TemporalAverage
 from neuronumba.numba_tools.config import NUMBA_CACHE, NUMBA_FASTMATH, NUMBA_NOGIL
 
 
@@ -81,9 +81,10 @@ def simulate_nodelay(model, integrator, weights, obs_var, sampling_period, t_max
     speed = 1.0
     con = Connectivity(weights=weights, lengths=lengths, speed=speed)
     history = HistoryNoDelays()
-    monitor = TemporalAverage(period=sampling_period, monitor_vars=model.get_var_info([obs_var]))
+    monitor = RawSubSample(period=sampling_period, monitor_vars=model.get_var_info([obs_var]))
     s = Simulator(connectivity=con, model=model, history=history, integrator=integrator, monitors=[monitor])
     t = s.run(0, t_warmup + t_max_neuronal)
     data = monitor.data(obs_var)
     data_from = int(data.shape[0] * t_warmup / (t_max_neuronal + t_warmup))
-    return data[data_from:, :]
+    # .copy() breaks the view chain to the monitor's buffer_state
+    return data[data_from:, :].copy()
