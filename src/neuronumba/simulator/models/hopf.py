@@ -46,12 +46,9 @@ from neuronumba.numba_tools.config import NUMBA_CACHE, NUMBA_FASTMATH, NUMBA_NOG
 
 
 class Hopf(Model):
-    state_vars = Model._build_var_dict(['x', 'y'])
-    n_state_vars = len(state_vars)
-    c_vars = [0, 1]
-
-    observable_vars = Model._build_var_dict([])
-    n_observable_vars = len(observable_vars)
+    _state_var_names = ['x', 'y']
+    _coupling_var_names = ['x', 'y']
+    _observable_var_names = []
 
     # ==========================================================================
     # supercritical Hopf bifurcation Constants
@@ -68,18 +65,6 @@ class Hopf(Model):
     sct = Attr(dependant=True)
     ink = Attr(dependant=True)
 
-    @property
-    def get_state_vars(self):
-        return Hopf.state_vars
-
-    @property
-    def get_observablevars(self):
-        return Hopf.observable_vars
-
-    @property
-    def get_c_vars(self):
-        return Hopf.c_vars
-
     def _init_dependant(self):
         super()._init_dependant()
         self.weights_t = self.weights.T
@@ -90,10 +75,6 @@ class Hopf(Model):
         state[0] = 0.1
         state[1] = 0.1
         return state
-
-    def initial_observed(self, n_rois):
-        observed = np.empty((1, 1))
-        return observed
 
     # Hopf model has a non-standard coupling
     def get_numba_coupling(self):
