@@ -1,6 +1,6 @@
 import numpy as np
 import numba as nb
-from typing import Dict, List, Tuple
+from typing import Tuple
 
 from overrides import overrides
 
@@ -23,14 +23,9 @@ class Montbrio(LinearCouplingModel):
     long-range coupling between brain regions.
     """
     
-    # State variables
-    state_vars = Model._build_var_dict(["r_e", "r_i", "u_e", "u_i", "S_ee", "S_ie"])
-    n_state_vars = len(state_vars)
-    # Coupling variable is only S_ee
-    c_vars = [4]
-
-    observable_vars = Model._build_var_dict([])
-    n_observable_vars = len(observable_vars)
+    _state_var_names = ['r_e', 'r_i', 'u_e', 'u_i', 'S_ee', 'S_ie']
+    _coupling_var_names = ['S_ee']
+    _observable_var_names = []
 
     # Automatic FIC computation
     auto_fic = Attr(default=False, attributes=Model.Type.Model,
@@ -73,21 +68,6 @@ class Montbrio(LinearCouplingModel):
     J_N_ee = Attr(dependant=True, attributes=Model.Type.Model)
     J_N_ie = Attr(dependant=True, attributes=Model.Type.Model)
 
-    @property
-    def get_state_vars(self) -> Dict[str, int]:
-        """Get dictionary mapping state variable names to their indices."""
-        return Montbrio.state_vars
-
-    @property
-    def get_observablevars(self) -> Dict[str, int]:
-        """Get dictionary mapping observable variable names to their indices."""
-        return Montbrio.observable_vars
-
-    @property
-    def get_c_vars(self) -> List[int]:
-        """Get list of coupling variable indices."""
-        return Montbrio.c_vars
-
     @overrides
     def _init_dependant(self) -> None:
         """Initialize dependent parameters based on model parameters."""
@@ -113,17 +93,6 @@ class Montbrio(LinearCouplingModel):
         # Initialize all variables to 0.1
         state.fill(0.0)
         return state
-
-    def initial_observed(self, n_rois: int) -> np.ndarray:
-        """Initialize observable variables.
-        
-        Args:
-            n_rois: Number of brain regions
-            
-        Returns:
-            Empty array since no observables in base implementation
-        """
-        return np.empty((1, 1))
 
     def get_numba_dfun(self) -> callable:
         """Get the numba-compiled differential function.
