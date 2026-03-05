@@ -1,4 +1,10 @@
+import argparse
+import glob
 import os
+import re
+
+# import numba
+# numba.config.DISABLE_JIT = True  # Disable JIT for debugging purposes; set to False for performance
 
 import numpy as np
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -8,7 +14,9 @@ from global_coupling_fitting import (
     ModelFactory, BoldModelFactory, IntegratorFactory, plot_fitting_distances
 )
 from papers.Deco2018.serotonin2A import Deco2018
+from neuronumba.fitting.fic.fic import FICHerzog2022
 from neuronumba.simulator.integrators import EulerStochastic
+from neuronumba.simulator.simulator import simulate_nodelay
 from neuronumba.tools import hdf
 from neuronumba.tools.filters import BandPassFilter
 from neuronumba.tools.loader import load_2d_matrix
@@ -126,7 +134,7 @@ def prepro_G_Optim(sc_norm, all_fMRI):
                 't_max_neuronal': t_max_neuronal,
                 't_warmup': t_warmup,
                 'sampling_period': sampling_period,
-                'force_recomputations': True,
+                'force_recomputations': False,
             }
             future = pool.submit(compute_g, exec_env, gf)
             future_to_g[future] = gf
@@ -173,5 +181,80 @@ def run_model_calibration():
     prepro_G_Optim(C, tc_transf_PLA)
 
 
+def run_simulation(g):
+    sc90 = load_2d_matrix(os.path.join(in_file_path, 'all_SC_FC_TC_76_90_116.mat'), index='sc90')
+    C = sc90 / np.max(sc90[:]) * 0.2
+
+    dt = 0.1
+    sampling_period = 1.0
+    t_max_neuronal = 440000
+    t_warmup = 1000
+
+    model = ModelFactory.create_model('Deco2018').set_attributes({'g': g, 'auto_fic': True})
+    integrator = IntegratorFactory.create_integrator('Deco2018', dt)
+
+    signal = simulate_nodelay(model, integrator, C, 're',
+                              sampling_period=sampling_period,
+                              t_max_neuronal=t_max_neuronal,
+                              t_warmup=t_warmup)
+
+    print(f'Simulation completed: g={g}, shape={signal.shape} (timepoints x regions)')
+
+    import matplotlib.pyplot as plt
+    n_regions = signal.shape[1]
+    subsample_step = int(10.0 / sampling_period)  # 1/100 s = 10 ms
+    signal_sub = signal[::subsample_step, :]
+    time = np.arange(signal_sub.shape[0]) * sampling_period * subsample_step
+    fig, ax = plt.subplots(figsize=(14, 8))
+    for r in range(n_regions):
+        ax.plot(time, signal_sub[:, r], linewidth=0.5, alpha=0.7)
+    ax.set_xlabel('Time (ms)')
+    ax.set_ylabel('Firing rate (re)')
+    ax.set_title(f'Deco2018 simulation — G={g}, {n_regions} regions')
+    plt.tight_layout()
+    plt.show()
+
+
+def compute_fic():
+    sc90 = load_2d_matrix(os.path.join(in_file_path, 'all_SC_FC_TC_76_90_116.mat'), index='sc90')
+    C = sc90 / np.max(sc90[:]) * 0.2
+
+    fitting_files = glob.glob(os.path.join(out_file_path, 'fitting*.mat'))
+    if not fitting_files:
+        print(f'No fitting*.mat files found in {out_file_path}')
+        return
+
+    fic = FICHerzog2022()
+    pattern = re.compile(r'fitting_g_([\d.]+)\.mat')
+
+    for f in sorted(fitting_files):
+        match = pattern.search(os.path.basename(f))
+        if not match:
+            print(f'Skipping {f}: cannot extract g value')
+            continue
+        g = float(match.group(1))
+        J = fic.compute_J(C, g)
+        out_name = os.path.join(out_file_path, f'J_Balance_we{g}.mat')
+        hdf.savemat(out_name, {'J': J})
+        print(f'g={g} -> {out_name}  (J shape={J.shape})')
+
+
 if __name__ == "__main__":
-    run_model_calibration()
+    parser = argparse.ArgumentParser(description='Deco2018 model workflows')
+    subparsers = parser.add_subparsers(dest='command', required=True)
+
+    subparsers.add_parser('calibrate', help='Run G-coupling calibration sweep')
+
+    sim_parser = subparsers.add_parser('simulate', help='Run a single simulation for a given G value')
+    sim_parser.add_argument('g', type=float, help='Global coupling parameter value')
+
+    subparsers.add_parser('fic', help='Compute FIC J vectors for all fitted G values')
+
+    args = parser.parse_args()
+
+    if args.command == 'calibrate':
+        run_model_calibration()
+    elif args.command == 'simulate':
+        run_simulation(args.g)
+    elif args.command == 'fic':
+        compute_fic()
