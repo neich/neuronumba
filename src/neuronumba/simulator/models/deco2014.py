@@ -13,7 +13,7 @@
 #
 # ==========================================================================
 # ==========================================================================
-from typing import Dict, List, Tuple, Union, Optional
+from typing import Tuple
 import numpy as np
 import numba as nb
 from scipy.optimize import fsolve
@@ -61,14 +61,9 @@ class Deco2014(LinearCouplingModel):
         S_e: Only excitatory synaptic activity contributes to coupling
     """
     
-    # State variables: S_e (excitatory synaptic activity), S_i (inhibitory synaptic activity)
-    state_vars = Model._build_var_dict(['S_e', 'S_i'])
-    n_state_vars = len(state_vars)
-    c_vars = [0]  # Only S_e couples between regions
-
-    # Observable variables: Ie (excitatory current), re (excitatory firing rate)
-    observable_vars = Model._build_var_dict(['Ie', 're'])
-    n_observable_vars = len(observable_vars)
+    _state_var_names = ['S_e', 'S_i']
+    _coupling_var_names = ['S_e']
+    _observable_var_names = ['Ie', 're']
 
     # ==========================================================================
     # Model Parameters
@@ -149,21 +144,6 @@ class Deco2014(LinearCouplingModel):
         if self.auto_fic and not self._attr_defined('J'):
             self.J = FICHerzog2022().compute_J(self.weights, self.g)
 
-    @property
-    def get_state_vars(self) -> Dict[str, int]:
-        """Get dictionary mapping state variable names to their indices."""
-        return Deco2014.state_vars
-
-    @property
-    def get_observablevars(self) -> Dict[str, int]:
-        """Get dictionary mapping observable variable names to their indices."""
-        return Deco2014.observable_vars
-
-    @property
-    def get_c_vars(self) -> List[int]:
-        """Get list of coupling variable indices."""
-        return Deco2014.c_vars
-
     def initial_state(self, n_rois: int) -> np.ndarray:
         """
         Initialize state variables for the model.
@@ -178,21 +158,6 @@ class Deco2014(LinearCouplingModel):
         state[0] = 0.001  # S_e initial value
         state[1] = 0.001  # S_i initial value
         return state
-
-    def initial_observed(self, n_rois: int) -> np.ndarray:
-        """
-        Initialize observable variables for the model.
-        
-        Args:
-            n_rois: Number of regions of interest
-            
-        Returns:
-            Initial observed array with shape (n_observable_vars, n_rois)
-        """
-        observed = np.empty((Deco2014.n_observable_vars, n_rois))
-        observed[0] = 0.0  # Ie initial value
-        observed[1] = 0.0  # re initial value
-        return observed
 
     def get_numba_dfun(self):
         """

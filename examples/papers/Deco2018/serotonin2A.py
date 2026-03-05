@@ -19,17 +19,11 @@ from neuronumba.simulator.models import LinearCouplingModel
 
 
 class Deco2018(LinearCouplingModel):
-    # Se, excitatory synaptic activity
-    state_vars = Model._build_var_dict(['S_e', 'S_i'])
-    n_state_vars = len(state_vars)
-    c_vars = [0]
+    _state_var_names = ['S_e', 'S_i']
+    _coupling_var_names = ['S_e']
+    _observable_var_names = ['Ie', 're']
 
-    # Ie, excitatory current
-    # re, excitatory firing rate
-    observable_vars = Model._build_var_dict(['Ie', 're'])
-    n_observable_vars = len(observable_vars)
-
-    auto_fic = Attr(default=False, attributes=Model.Type.Model)
+    auto_fic = Attr(default=True, attributes=Model.Type.Model)
     taon = Attr(default=100.0, attributes=Model.Type.Model)
     taog = Attr(default=10.0, attributes=Model.Type.Model)
     gamma_e = Attr(default=0.641, attributes=Model.Type.Model)
@@ -58,29 +52,11 @@ class Deco2018(LinearCouplingModel):
         if self.auto_fic and not self._attr_defined('J'):
             self.J = FICHerzog2022().compute_J(self.weights, self.g)
 
-    @property
-    def get_state_vars(self):
-        return Deco2018.state_vars
-
-    @property
-    def get_observablevars(self):
-        return Deco2018.observable_vars
-
-    @property
-    def get_c_vars(self):
-        return Deco2018.c_vars
-
     def initial_state(self, n_rois):
         state = np.empty((Deco2018.n_state_vars, n_rois))
         state[0] = 0.001
         state[1] = 0.001
         return state
-
-    def initial_observed(self, n_rois):
-        observed = np.empty((Deco2018.n_observable_vars, n_rois))
-        observed[0] = 0.0
-        observed[1] = 0.0
-        return observed
 
     def get_numba_dfun(self):
         m = self.m.copy()

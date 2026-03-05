@@ -240,13 +240,9 @@ class ZerlautAdaptationFirstOrder(LinearCouplingModel):
     # I: firing rate of inhibitory population in KHz\n
     # W_e: level of adaptation of excitatory in pA\n
     # W_i: level of adaptation of inhibitory in pA\n
-    state_vars = Model._build_var_dict('E I W_e W_i ou_drift'.split())
-    n_state_vars = len(state_vars)
-    c_vars = [0]  # Only E couples between regions
-
-    n_observable_vars = 0
-
-
+    _state_var_names = ['E', 'I', 'W_e', 'W_i', 'ou_drift']
+    _coupling_var_names = ['E']
+    _observable_var_names = []
 
     # Define traited attributes for this model, these represent possible kwargs.
     g_L = Attr(default=10.0, attributes=Model.Type.Model, doc="leak conductance [nS]")
@@ -535,11 +531,9 @@ class ZerlautAdaptationSecondOrder(ZerlautAdaptationFirstOrder):
     # C_ei: the covariance between the excitatory and inhibitory population activities (always symetric) \n
     # C_ie: the variance of the inhibitory population activity \n
     # W: level of adaptation
-    state_vars = Model._build_var_dict('E I C_ee Cei C_ii W_e W_i ou_drift'.split())
-    n_state_vars = len(state_vars)
-    c_vars = [0]  # Only E couples between regions
-
-    n_observable_vars = 0
+    _state_var_names = ['E', 'I', 'C_ee', 'Cei', 'C_ii', 'W_e', 'W_i', 'ou_drift']
+    _coupling_var_names = ['E']
+    _observable_var_names = []
 
     def initial_state(self, n_rois: int) -> np.ndarray:
         """

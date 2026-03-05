@@ -9,21 +9,66 @@ from neuronumba.basic.attr import HasAttr, Attr, AttrEnum
 from neuronumba.numba_tools.config import NUMBA_CACHE, NUMBA_FASTMATH, NUMBA_NOGIL
 
 
-class ParameterEnum(object):
-    def __init__(self):
-        self._index = 0
-
-    def add_param(self, name):
-        setattr(self, name, self._index)
-        self._index += 1
-
-
 class Model(HasAttr):
     Type = AttrEnum(['Model', 'ModelAux'])
 
     weights = Attr(required=True)
     n_rois = Attr(dependant=True)
     m = Attr(dependant=True)
+
+    # ---------------------------------------------------------------
+    # Model interface: subclasses declare these lists of variable names
+    # ---------------------------------------------------------------
+
+    _state_var_names: list[str] = []
+    """Names of state variables, in row order.
+    Example: ['S_e', 'S_i'] means state[0,:] is S_e, state[1,:] is S_i.
+    """
+
+    _coupling_var_names: list[str] = []
+    """Names of state variables that participate in inter-region coupling.
+    Must be a subset of _state_var_names.
+    Example: ['S_e'] means only S_e is coupled across regions.
+    """
+
+    _observable_var_names: list[str] = []
+    """Names of observable variables computed inside dfun but not integrated.
+    Example: ['Ie', 're'] for excitatory current and firing rate.
+    """
+
+    # ---------------------------------------------------------------
+    # Derived class attributes (auto-computed by __init_subclass__)
+    # ---------------------------------------------------------------
+
+    state_vars: dict = {}
+    """Dict mapping state variable name -> row index. Auto-computed from _state_var_names."""
+
+    n_state_vars: int = 0
+    """Number of state variables. Auto-computed from _state_var_names."""
+
+    c_vars: list = []
+    """List of integer indices into the state array for coupled variables.
+    Auto-computed from _coupling_var_names and _state_var_names.
+    """
+
+    observable_vars: dict = {}
+    """Dict mapping observable variable name -> row index. Auto-computed from _observable_var_names."""
+
+    n_observable_vars: int = 0
+    """Number of observable variables. Auto-computed from _observable_var_names."""
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        # Only process subclasses that declare their own _state_var_names
+        if '_state_var_names' in cls.__dict__:
+            cls.state_vars = {name: i for i, name in enumerate(cls._state_var_names)}
+            cls.n_state_vars = len(cls._state_var_names)
+        if '_observable_var_names' in cls.__dict__:
+            cls.observable_vars = {name: i for i, name in enumerate(cls._observable_var_names)}
+            cls.n_observable_vars = len(cls._observable_var_names)
+        if '_coupling_var_names' in cls.__dict__:
+            # Resolve names to integer indices using state_vars
+            cls.c_vars = [cls.state_vars[name] for name in cls._coupling_var_names]
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -45,10 +90,6 @@ class Model(HasAttr):
     def _init_dependant(self):
         super()._init_dependant()
         self.n_rois = self.weights.shape[0]
-
-    @classmethod
-    def _build_var_dict(cls, var_list: list[str]):
-        return {v_name: index for index, v_name in enumerate(var_list)}
 
     @classmethod
     def _build_parameter_enum(cls):
@@ -74,9 +115,31 @@ class Model(HasAttr):
                 raise AttributeError(f"Variable <{v}> is not in the state or observable variables list!")
         return result
 
-    def get_numba_coupling(self):
+    def get_numba_dfun(self):
+        """Return a @nb.njit compiled function that computes state derivatives and observables.
+
+        Signature: UniTuple(f8[:,:], 2)(f8[:,:], f8[:,:])
+            (state, coupling) -> (d_state, observed)
+
+        - state:    shape (n_state_vars, n_rois)
+        - coupling: shape (len(c_vars), n_rois)
+        - d_state:  shape (n_state_vars, n_rois) — time derivatives
+        - observed: shape (n_observable_vars, n_rois) or (1,1) if no observables
         """
-        :return: numba function with signature nb.f8[:, :](nb.f8[:, :]) (state) -> coupling
+        raise NotImplementedError
+
+    def initial_state(self, n_rois):
+        """Return the initial state array of shape (n_state_vars, n_rois)."""
+        raise NotImplementedError
+
+    def get_numba_coupling(self):
+        """Return a @nb.njit compiled coupling function.
+
+        Signature: f8[:,:](f8[:,:])
+            (state_coupled) -> coupling
+
+        - state_coupled: shape (len(c_vars), n_rois)
+        - coupling:      shape (len(c_vars), n_rois)
         """
         raise NotImplementedError
 

@@ -40,12 +40,9 @@ from neuronumba.numba_tools.config import NUMBA_CACHE, NUMBA_FASTMATH, NUMBA_NOG
 
 
 class Naskar2021(LinearCouplingModel):
-    state_vars = Model._build_var_dict(['S_e', 'S_i', 'J'])
-    n_state_vars = len(state_vars)
-    c_vars = [0]
-
-    observable_vars = Model._build_var_dict(['Ie', 're'])
-    n_observable_vars = len(observable_vars)
+    _state_var_names = ['S_e', 'S_i', 'J']
+    _coupling_var_names = ['S_e']
+    _observable_var_names = ['Ie', 're']
 
     t_glu = Attr(default=7.46, attributes=Model.Type.Model)    # concentration of glutamate
     t_gaba = Attr(default=1.82, attributes=Model.Type.Model)   # concentration of GABA
@@ -73,30 +70,12 @@ class Naskar2021(LinearCouplingModel):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-    @property
-    def get_state_vars(self):
-        return Naskar2021.state_vars
-
-    @property
-    def get_observablevars(self):
-        return Naskar2021.observable_vars
-
-    @property
-    def get_c_vars(self):
-        return Naskar2021.c_vars
-
     def initial_state(self, n_rois):
         state = np.empty((Naskar2021.n_state_vars, n_rois))
         state[0] = 0.001
         state[1] = 0.001
         state[2] = 1.0
         return state
-
-    def initial_observed(self, n_rois):
-        observed = np.empty((Naskar2021.n_observable_vars, n_rois))
-        observed[0] = 0.0
-        observed[1] = 0.0
-        return observed
 
     def get_numba_dfun(self):
         m = self.m.copy()
