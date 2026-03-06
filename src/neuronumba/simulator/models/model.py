@@ -155,10 +155,12 @@ class Model(HasAttr):
 
         :param sigma: the noise amplitude, format one value, type float
 
-        :return: the covariance noise matrix Qn, format (2 n_roi, 2 n_roi)
+        :return: the covariance noise matrix Qn, format (n_eqs n_roi, n_eqs n_roi)
         """
         # =============== Build Qn
-        Qn = (sigma ** 2) * np.eye(2 * N)  # covariance matrix of the noise
+        cls = type(self)
+        n_eqs = cls.n_state_vars
+        Qn = (sigma ** 2) * np.eye(n_eqs * N)  # covariance matrix of the noise
         return Qn
 
     def as_array(self, param):
