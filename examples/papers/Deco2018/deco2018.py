@@ -7,10 +7,9 @@ import re
 # numba.config.DISABLE_JIT = True  # Disable JIT for debugging purposes; set to False for performance
 
 import numpy as np
-from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from global_coupling_fitting import (
-    compute_g, process_empirical_subjects, create_observables_dict,
+    ExecEnv, sweep_g_sequential, process_empirical_subjects, create_observables_dict,
     ModelFactory, BoldModelFactory, IntegratorFactory, plot_fitting_distances
 )
 from papers.Deco2018.serotonin2A import Deco2018
@@ -26,7 +25,18 @@ out_file_path = "./Data_Produced"
 
 # Register Deco2018 model and its integrator configuration in the factories
 ModelFactory.add_model('Deco2018', lambda: Deco2018())
-IntegratorFactory.add_integrator_config('Deco2018', lambda dt: EulerStochastic(dt=dt, sigmas=np.r_[1e-2, 1e-2]))
+IntegratorFactory.add_integrator_config('Deco2018', lambda dt: EulerStochastic(dt=dt, sigmas=np.r_[1e-3, 1e-3]))
+
+
+SUBSAMPLE_STEP = 100
+
+def save_subject_signals(n, exec_env, signal, bold):
+    g_str = os.path.splitext(os.path.basename(exec_env['out_file']))[0]
+    subj_file = os.path.join(out_file_path, f'{g_str}_subj_{n}.mat')
+    data = {'raw': signal[::SUBSAMPLE_STEP, :]}
+    if bold is not None:
+        data['bold'] = bold
+    hdf.savemat(subj_file, data)
 
 
 def LR_version_symm(TC):
@@ -79,83 +89,27 @@ def prepro_G_Optim(sc_norm, all_fMRI):
     else:
         processed = {o: load_2d_matrix(emp_filename, index=o) for o in observables.keys()}
 
-    # Single process execution for debugging purposes
-    # compute_g({
-    #     'verbose': True,
-    #     'model': 'Deco2018',
-    #     'model_attributes': {'auto_fic': False},
-    #     'dt': dt,
-    #     'weights': sc_norm,
-    #     'processed': processed,
-    #     'tr': tr,
-    #     'observables': observables_list,
-    #     'bpf': bpf,
-    #     'obs_var': obs_var,
-    #     'bold': True,
-    #     'bold_model': bold_model,
-    #     'out_file': out_file_name_pattern.format(2.1),
-    #     'num_subjects': 1,
-    #     't_max_neuronal': t_max_neuronal,
-    #     't_warmup': t_warmup,
-    #     'sampling_period': sampling_period,
-    #     'force_recomputations': True,
-    # }, 2.1)  # 2.1 is the reported optimum for this computation.
-
-    # Parallel G sweep using ProcessPoolExecutor with retry on failure.
-    # Submit in batches of max_workers to avoid pickling all exec_envs at once:
-    # each exec_env contains weights (64KB) + processed (~200KB) that get serialized per task.
-    max_workers = 15
-    remaining_gs = list(gs)
-    finished_gs = []
-
-    while len(remaining_gs) > 0:
-        batch = remaining_gs[:max_workers]
-        print(f'Creating process pool with {max_workers} workers for batch of {len(batch)}/{len(remaining_gs)} G values')
-        pool = ProcessPoolExecutor(max_workers=max_workers)
-        futures = []
-        future_to_g = {}
-
-        for gf in batch:
-            exec_env = {
-                'verbose': True,
-                'model': 'Deco2018',
-                'model_attributes': {'auto_fic': False},
-                'dt': dt,
-                'weights': sc_norm,
-                'processed': processed,
-                'tr': tr,
-                'observables': observables_list,
-                'bpf': bpf,
-                'obs_var': obs_var,
-                'bold': True,
-                'bold_model': bold_model,
-                'out_file': out_file_name_pattern.format(np.round(gf, decimals=3)),
-                'num_subjects': n_sim_subj,
-                't_max_neuronal': t_max_neuronal,
-                't_warmup': t_warmup,
-                'sampling_period': sampling_period,
-                'force_recomputations': False,
-            }
-            future = pool.submit(compute_g, exec_env, gf)
-            future_to_g[future] = gf
-            futures.append(future)
-
-        batch_failed = []
-        for future in as_completed(futures):
-            gf = future_to_g[future]
-            try:
-                # Don't accumulate results — compute_g already saves to disk,
-                # and plot_fitting_distances reads from disk files.
-                future.result()
-                finished_gs.append(gf)
-                print(f"Finished g={gf}")
-            except Exception as exc:
-                print(f"Failed g={gf}: {exc}")
-                batch_failed.append(gf)
-
-        pool.shutdown(wait=True)
-        # Re-queue only failed g values from this batch, then continue with remaining
-        remaining_gs = batch_failed + remaining_gs[len(batch):]
+    base_exec_env = ExecEnv({
+        'verbose': True,
+        'model': 'Deco2018',
+        # 'model_attributes': {'auto_fic': True},
+        'dt': dt,
+        'weights': sc_norm,
+        'processed': processed,
+        'tr': tr,
+        'observables': observables_list,
+        'bpf': bpf,
+        'obs_var': obs_var,
+        'bold': True,
+        'bold_model': bold_model,
+        'num_subjects': n_sim_subj,
+        't_max_neuronal': t_max_neuronal,
+        't_warmup': t_warmup,
+        'sampling_period': sampling_period,
+        'force_recomputations': False,
+        # 'callback_simulate_single_subject': save_subject_signals,
+    })
+    sweep_g_sequential(gs, base_exec_env, out_file_name_pattern, nproc=min(n_sim_subj, 15))
 
     plot_fitting_distances(out_file_path, 'fitting_g_*.mat')
 
@@ -190,7 +144,7 @@ def run_simulation(g):
     t_max_neuronal = 440000
     t_warmup = 1000
 
-    model = ModelFactory.create_model('Deco2018').set_attributes({'g': g, 'auto_fic': True})
+    model = ModelFactory.create_model('Deco2018').set_attributes({'g': g})
     integrator = IntegratorFactory.create_integrator('Deco2018', dt)
 
     signal = simulate_nodelay(model, integrator, C, 're',
