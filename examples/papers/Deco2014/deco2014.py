@@ -17,10 +17,6 @@ from neuronumba.tools.loader import load_2d_matrix
 in_file_path = "./Data_Raw"
 out_file_path = "./Data_Produced"
 
-# Register Deco2014 model and its integrator configuration in the factories
-ModelFactory.add_model('Deco2014', lambda: Deco2014())
-IntegratorFactory.add_integrator_config('Deco2014', lambda dt: EulerStochastic(dt=dt, sigmas=np.r_[2e-4, 2e-4]))
-
 
 def load_connectivity():
     C = load_2d_matrix(os.path.join(in_file_path, 'Human_66.mat'), index='C')
