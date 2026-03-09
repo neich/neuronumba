@@ -275,59 +275,33 @@ class BoldModelFactory:
 
 class IntegratorFactory:
     """Factory for creating integrators with appropriate noise configurations for different models."""
-    
-    _configurations = {
-        'Hopf': lambda dt: EulerStochastic(dt=dt, sigmas=np.r_[1e-2, 1e-2]),
-        'Deco2014': lambda dt: EulerStochastic(dt=dt, sigmas=np.r_[1e-2, 1e-2]),
-        'Montbrio': lambda dt: EulerStochastic(dt=dt, sigmas=np.r_[0.0, 0.0, 0.0, 0.0, 1e-3, 1e-3]),
-        'Zerlaut2O': lambda dt: EulerStochastic(dt=dt, sigmas=np.r_[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1e-3]),
+
+    _sigmas = {
+        'Hopf': np.r_[1e-2, 1e-2],
+        'Deco2014': np.r_[1e-2, 1e-2],
+        'Montbrio': np.r_[0.0, 0.0, 0.0, 0.0, 1e-3, 1e-3],
+        'Zerlaut2O': np.r_[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1e-3],
     }
-    
+
     @staticmethod
     def create_integrator(model_name, dt):
-        """
-        Create an integrator appropriate for the given model.
-        
-        Args:
-            model_name: Name of the model ('Hopf', 'Deco2014', 'Montbrio', 'Zerlaut2O')
-            dt: Integration time step (ms)
-            
-        Returns:
-            Configured integrator instance
-        """
-        if model_name not in IntegratorFactory._configurations:
+        if model_name not in IntegratorFactory._sigmas:
             raise ValueError(f"Unknown model name for integrator: {model_name}")
-        return IntegratorFactory._configurations[model_name](dt)
-    
+        return EulerStochastic(dt=dt, sigmas=IntegratorFactory._sigmas[model_name])
+
     @staticmethod
     def list_available_integrators():
-        """List all available integrator configurations."""
-        return list(IntegratorFactory._configurations.keys())
-    
+        return list(IntegratorFactory._sigmas.keys())
+
     @staticmethod
-    def add_integrator_config(model_name, creator):
-        """
-        Add a new integrator configuration.
-        
-        Args:
-            model_name: Name of the model
-            creator: Function that takes dt and returns an integrator instance
-        """
-        IntegratorFactory._configurations[model_name] = creator
-    
+    def add_integrator_config(model_name, sigmas):
+        IntegratorFactory._sigmas[model_name] = sigmas
+
     @staticmethod
     def get_sigma_config(model_name):
-        """Get the sigma configuration for a given model (for debugging/inspection)."""
-        if model_name == 'Hopf':
-            return np.r_[1e-2, 1e-2]
-        elif model_name == 'Deco2014':
-            return np.r_[1e-3, 1e-3]
-        elif model_name == 'Montbrio':
-            return np.r_[0.0, 0.0, 0.0, 0.0, 1e-3, 1e-3]
-        elif model_name == 'Zerlaut2O':
-            return np.r_[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1e-3]
-        else:
+        if model_name not in IntegratorFactory._sigmas:
             raise ValueError(f"Unknown model name: {model_name}")
+        return IntegratorFactory._sigmas[model_name]
 
 
 def load_subject_list(path):
