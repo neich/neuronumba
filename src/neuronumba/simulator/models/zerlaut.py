@@ -245,58 +245,58 @@ class ZerlautAdaptationFirstOrder(LinearCouplingModel):
     _observable_var_names = []
 
     # Define traited attributes for this model, these represent possible kwargs.
-    g_L = Attr(default=10.0, attributes=Model.Type.Model, doc="leak conductance [nS]")
+    g_L = Attr(default=10.0, attributes=Model.Tag.REGIONAL, doc="leak conductance [nS]")
 
-    E_L_e = Attr(default=-65.0, attributes=Model.Type.Model, doc="leak reversal potential for excitatory [mV]")
+    E_L_e = Attr(default=-65.0, attributes=Model.Tag.REGIONAL, doc="leak reversal potential for excitatory [mV]")
 
-    E_L_i = Attr(default=-65.0, attributes=Model.Type.Model, doc="leak reversal potential for inhibitory [mV]")
+    E_L_i = Attr(default=-65.0, attributes=Model.Tag.REGIONAL, doc="leak reversal potential for inhibitory [mV]")
 
     # N.B. Not independent of g_L, C_m should scale linearly with g_L
-    C_m = Attr(default=200.0, attributes=Model.Type.Model, doc="membrane capacitance [pF]")
+    C_m = Attr(default=200.0, attributes=Model.Tag.REGIONAL, doc="membrane capacitance [pF]")
 
-    b_e = Attr(default=60.0, attributes=Model.Type.Model, doc="Excitatory adaptation current increment [pA]")
+    b_e = Attr(default=60.0, attributes=Model.Tag.REGIONAL, doc="Excitatory adaptation current increment [pA]")
 
-    a_e = Attr(default=4.0, attributes=Model.Type.Model, doc="Excitatory adaptation conductance [nS]")
+    a_e = Attr(default=4.0, attributes=Model.Tag.REGIONAL, doc="Excitatory adaptation conductance [nS]")
 
-    b_i = Attr(default=0.0, attributes=Model.Type.Model, doc="Inhibitory adaptation current increment [pA]")
+    b_i = Attr(default=0.0, attributes=Model.Tag.REGIONAL, doc="Inhibitory adaptation current increment [pA]")
 
-    a_i = Attr(default=0.0, attributes=Model.Type.Model, doc="Inhibitory adaptation conductance [nS]")
+    a_i = Attr(default=0.0, attributes=Model.Tag.REGIONAL, doc="Inhibitory adaptation conductance [nS]")
 
-    tau_w_e = Attr(default=500.0, attributes=Model.Type.Model, doc="Adaptation time constant of excitatory neurons [ms]")
+    tau_w_e = Attr(default=500.0, attributes=Model.Tag.REGIONAL, doc="Adaptation time constant of excitatory neurons [ms]")
     
-    tau_w_i = Attr(default=1.0, attributes=Model.Type.Model, doc="Adaptation time constant of inhibitory neurons [ms]")
+    tau_w_i = Attr(default=1.0, attributes=Model.Tag.REGIONAL, doc="Adaptation time constant of inhibitory neurons [ms]")
 
-    E_e = Attr(default=0.0, attributes=Model.Type.Model, doc="excitatory reversal potential [mV]")
+    E_e = Attr(default=0.0, attributes=Model.Tag.REGIONAL, doc="excitatory reversal potential [mV]")
 
-    E_i = Attr(default=-80.0, attributes=Model.Type.Model, doc="inhibitory reversal potential [mV]")
+    E_i = Attr(default=-80.0, attributes=Model.Tag.REGIONAL, doc="inhibitory reversal potential [mV]")
 
-    Q_e = Attr(default=1.5, attributes=Model.Type.Model, doc="excitatory quantal conductance [nS]")
+    Q_e = Attr(default=1.5, attributes=Model.Tag.REGIONAL, doc="excitatory quantal conductance [nS]")
 
-    Q_i = Attr(default=5.0, attributes=Model.Type.Model, doc="inhibitory quantal conductance [nS]")
+    Q_i = Attr(default=5.0, attributes=Model.Tag.REGIONAL, doc="inhibitory quantal conductance [nS]")
 
-    tau_e = Attr(default=5.0, attributes=Model.Type.Model, doc="excitatory decay [ms]")
+    tau_e = Attr(default=5.0, attributes=Model.Tag.REGIONAL, doc="excitatory decay [ms]")
 
-    tau_i = Attr(default=5.0, attributes=Model.Type.Model, doc="inhibitory decay [ms]")
+    tau_i = Attr(default=5.0, attributes=Model.Tag.REGIONAL, doc="inhibitory decay [ms]")
 
-    N_tot = Attr(default=10000, attributes=Model.Type.Model, doc="cell number")
+    N_tot = Attr(default=10000, attributes=Model.Tag.REGIONAL, doc="cell number")
 
-    p_connect_e = Attr(default=0.05, attributes=Model.Type.Model, doc="connectivity probability")
+    p_connect_e = Attr(default=0.05, attributes=Model.Tag.REGIONAL, doc="connectivity probability")
 
-    p_connect_i = Attr(default=0.05, attributes=Model.Type.Model, doc="connectivity probability")
+    p_connect_i = Attr(default=0.05, attributes=Model.Tag.REGIONAL, doc="connectivity probability")
 
-    gi = Attr(default=0.2, attributes=Model.Type.Model, doc="fraction of inhibitory cells")
+    gi = Attr(default=0.2, attributes=Model.Tag.REGIONAL, doc="fraction of inhibitory cells")
 
-    K_ext_e = Attr(default=400, attributes=Model.Type.Model, doc="Number of excitatory connexions from external population")
+    K_ext_e = Attr(default=400, attributes=Model.Tag.REGIONAL, doc="Number of excitatory connexions from external population")
 
-    K_ext_i = Attr(default=0, attributes=Model.Type.Model, doc="Number of inhibitory connexions from external population")
+    K_ext_i = Attr(default=0, attributes=Model.Tag.REGIONAL, doc="Number of inhibitory connexions from external population")
 
-    T = Attr(default=20.0, attributes=Model.Type.Model, doc="time scale of describing network activity")
+    T = Attr(default=20.0, attributes=Model.Tag.REGIONAL, doc="time scale of describing network activity")
 
     P_e = Attr(default=np.array([-0.04983106, 0.005063550882777035, -0.023470121807314552,
                              0.0022951513725067503,
                              -0.0004105302652029825, 0.010547051343547399, -0.03659252821136933,
                              0.007437487505797858, 0.001265064721846073, -0.04072161294490446]),
-                attributes=Model.Type.ModelAux,
+                attributes=Model.Tag.GLOBAL,
                 doc="Polynome of excitatory phenomenological threshold (order 9)")
 
     P_i = Attr(default=np.array([-0.05149122024209484, 0.004003689190271077, -0.008352013668528155,
@@ -304,22 +304,22 @@ class ZerlautAdaptationFirstOrder(LinearCouplingModel):
                              -0.0005070645080016026, 0.0014345394104282397, -0.014686689498949967,
                              0.004502706285435741,
                              0.0028472190352532454, -0.015357804594594548]),
-                attributes=Model.Type.ModelAux,
+                attributes=Model.Tag.GLOBAL,
                 doc="Polynome of inhibitory phenomenological threshold (order 9)")
 
-    external_input_ex_ex = Attr(default=0.0, attributes=Model.Type.Model, doc="external drive")
+    external_input_ex_ex = Attr(default=0.0, attributes=Model.Tag.REGIONAL, doc="external drive")
 
-    external_input_ex_in = Attr(default=0.0, attributes=Model.Type.Model, doc="external drive")
+    external_input_ex_in = Attr(default=0.0, attributes=Model.Tag.REGIONAL, doc="external drive")
 
-    external_input_in_ex = Attr(default=0.0, attributes=Model.Type.Model, doc="external drive")
+    external_input_in_ex = Attr(default=0.0, attributes=Model.Tag.REGIONAL, doc="external drive")
 
-    external_input_in_in = Attr(default=0.0, attributes=Model.Type.Model, doc="external drive")
+    external_input_in_in = Attr(default=0.0, attributes=Model.Tag.REGIONAL, doc="external drive")
 
-    tau_OU = Attr(default=5.0, attributes=Model.Type.Model, doc="time constant noise")
+    tau_OU = Attr(default=5.0, attributes=Model.Tag.REGIONAL, doc="time constant noise")
 
-    weight_noise = Attr(default=10.5, attributes=Model.Type.Model, doc="weight noise")
+    weight_noise = Attr(default=10.5, attributes=Model.Tag.REGIONAL, doc="weight noise")
 
-    S_i = Attr(default=1.0, attributes=Model.Type.Model, doc="Scaling of the remote input for the inhibitory population with respect to the excitatory population")
+    S_i = Attr(default=1.0, attributes=Model.Tag.REGIONAL, doc="Scaling of the remote input for the inhibitory population with respect to the excitatory population")
 
     def initial_state(self, n_rois: int) -> np.ndarray:
         """
@@ -337,8 +337,8 @@ class ZerlautAdaptationFirstOrder(LinearCouplingModel):
 
     def get_numba_dfun(self):
         """
-        Generate the Numba-compiled differential function for the Deco2014 model.
-        
+        Generate the Numba-compiled differential function for the ZerlautAdaptationFirstOrder model.
+
         Returns:
             Compiled function that computes state derivatives and observables
         """
@@ -551,8 +551,8 @@ class ZerlautAdaptationSecondOrder(ZerlautAdaptationFirstOrder):
 
     def get_numba_dfun(self):
         """
-        Generate the Numba-compiled differential function for the Deco2014 model.
-        
+        Generate the Numba-compiled differential function for the ZerlautAdaptationSecondOrder model.
+
         Returns:
             Compiled function that computes state derivatives and observables
         """
