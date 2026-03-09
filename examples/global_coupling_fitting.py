@@ -8,11 +8,11 @@ import itertools
 import os
 import secrets
 import time
-import sys
+
+from typing import Callable, TypedDict
 
 import numpy as np
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from numpy.ma.core import repeat
 
 # import numba
 # Disable JIT compilation for debugging purposes
@@ -20,9 +20,9 @@ from numpy.ma.core import repeat
 
 from neuronumba.bold import BoldStephan2008, BoldStephan2007, BoldStephan2007Alt
 from neuronumba.observables.sw_fcd import SwFCD
-from neuronumba.simulator.models import Deco2014, ZerlautAdaptationFirstOrder, ZerlautAdaptationSecondOrder, Hopf, Montbrio
+from neuronumba.simulator.models import Deco2014, ZerlautAdaptationSecondOrder, Hopf, Montbrio
 from neuronumba.fitting.fic.fic import FICDeco2014
-from neuronumba.tools import filterps, hdf
+from neuronumba.tools import hdf
 from neuronumba.tools.filters import BandPassFilter
 from neuronumba.observables import PhFCD, FC
 
@@ -32,6 +32,73 @@ from neuronumba.observables.measures import KolmogorovSmirnovStatistic, PearsonS
 from neuronumba.simulator.integrators.euler import EulerStochastic
 from neuronumba.simulator.simulator import simulate_nodelay
 from neuronumba.tools.loader import load_2d_matrix
+from neuronumba.tools.random import set_seed
+
+
+class ExecEnv(TypedDict, total=False):
+    """
+    Execution environment dictionary for simulation runs.
+
+    Carries all configuration needed by compute_g / compute_g_mp and the
+    functions they call.  All fields are optional (total=False) because
+    different code paths require different subsets.
+
+    Attributes:
+        verbose: Print progress and timing information during execution.
+        model: Registered model name (e.g. 'Deco2014', 'Hopf'). Must exist in ModelFactory.
+        model_attributes: Extra attributes passed to model.set_attributes() (e.g. {'auto_fic': True}).
+        dt: Integration time step in milliseconds.
+        weights: Structural connectivity matrix, shape (n_rois, n_rois).
+        processed: Pre-computed empirical observables, keyed by observable name.
+        tr: Repetition time of the fMRI scanner in milliseconds.
+        observables: Observable specs as passed on the CLI (e.g. ['FC,PS', 'swFCD,KS']).
+        bpf: Band-pass filter applied to BOLD signals before computing observables.
+        obs_var: Name of the model variable to record (must be in state_vars or observable_vars).
+        bold: Whether to generate BOLD signal from the raw neuronal signal.
+        bold_model: Configured BOLD model instance (from BoldModelFactory).
+        out_file: Path where simulation results are saved (.mat).
+        num_subjects: Number of independent simulation trials (virtual subjects).
+        t_max_neuronal: Total neuronal simulation time in milliseconds (excluding warmup).
+        t_warmup: Warmup period in milliseconds (discarded from output).
+        sampling_period: Raw signal sampling period in milliseconds.
+        force_recomputations: If True, ignore cached results and recompute.
+        scale_signal: Multiplicative factor applied to the raw signal before BOLD conversion.
+        J: FIC balance vector, shape (n_rois,). Set automatically when J_file_name_pattern is used.
+        J_file_name_pattern: Format string for FIC files (e.g. 'path/J_{}.mat'). When present,
+            FIC is loaded or computed and stored in 'J' before simulation.
+        weights_sigma_factor: When > 0, adds Gaussian noise to the SC matrix scaled by this factor
+            times the matrix maximum, producing a perturbed copy per simulation call.
+        callback_simulate_single_subject: Optional callable(n, exec_env, signal, bold) invoked
+            after each subject in the multiprocessing executor path.
+    """
+    verbose: bool
+    model: str
+    model_attributes: dict
+    dt: float
+    weights: np.ndarray
+    processed: dict
+    tr: float
+    observables: list[str]
+    bpf: BandPassFilter | None
+    obs_var: str
+    bold: bool
+    bold_model: object
+    out_file: str
+    num_subjects: int
+    t_max_neuronal: float
+    t_warmup: float
+    sampling_period: float
+    force_recomputations: bool
+    scale_signal: float
+    J: np.ndarray
+    J_file_name_pattern: str
+    weights_sigma_factor: float
+    callback_simulate_single_subject: Callable[[int, 'ExecEnv', np.ndarray, np.ndarray | None], None]
+
+
+
+def get_model_attributes(exec_env: ExecEnv):
+    return exec_env['model_attributes'] if 'model_attributes' in exec_env and exec_env['model_attributes'] else {}
 
 
 class ObservableConfig:
@@ -272,16 +339,6 @@ def load_subject_list(path):
     return subjects
 
 
-
-def load_subject_list(path):
-    subjects = []
-    with open(path, newline='') as csvfile:
-        reader = csv.reader(csvfile, delimiter=' ', quotechar='|')
-        for row in reader:
-            subjects.append(int(row[0]))
-    return subjects
-
-
 def save_selected_subjcets(path, subj):
     with open(path, 'w', newline='') as csvfile:
         writer = csv.writer(csvfile, delimiter=' ',
@@ -296,17 +353,15 @@ def load_subjects_data(fmri_path, max_subjects=21):
     # Read: examples/Data_Raw/ebrains_popovych/README.md
     if not os.path.isdir(fmri_path):
         raise FileNotFoundError(f"Path <{fmri_path}> does not exist or is not a folder!")
-    n_sub = 0
     result = {}
-    for n_sub in range(max_subjects):
-        subject_path = os.path.join(fmri_path, f'{n_sub:03d}')
+    for n in range(max_subjects):
+        subject_path = os.path.join(fmri_path, f'{n:03d}')
         if os.path.isdir(subject_path):
             fmri_file = os.path.join(subject_path, 'rfMRI_REST1_LR_BOLD.csv')
             if not os.path.isfile(fmri_file):
                 raise FileNotFoundError(f"fMRI file <{fmri_file}> not found!")
             # We want the shape of each fmri to be (n_rois, t_max)
-            result[n_sub] = load_2d_matrix(fmri_file).T
-            n_sub += 1
+            result[n] = load_2d_matrix(fmri_file).T
 
     return result
 
@@ -333,8 +388,8 @@ def load_sc(fmri_path, scale):
     return scale * sc / sc.max()
 
 
-def simulate(exec_env, g):
-    model = ModelFactory.create_model(exec_env['model']).set_attributes(exec_env['model_attributes'])
+def simulate(exec_env: ExecEnv, g):
+    model = ModelFactory.create_model(exec_env['model']).set_attributes(get_model_attributes(exec_env))
     weights = exec_env['weights']
     if 'weights_sigma_factor' in exec_env:
         mmax = np.max(weights)
@@ -359,7 +414,7 @@ def simulate(exec_env, g):
     return signal
 
 
-def simulate_single_subject(exec_env, g):
+def simulate_single_subject(exec_env: ExecEnv, g):
     signal = simulate(exec_env, g) * exec_env.get('scale_signal', 1.0)
     sampling_period = exec_env['sampling_period']
     if exec_env['bold']:
@@ -369,51 +424,65 @@ def simulate_single_subject(exec_env, g):
     else:
         return signal, None
 
-def process_bold_signals(bold_signals, observables_list, band_pass_filter=None, verbose=True):
+def _process_signals(signals, observables, verbose=True, transpose=False):
     """
-    Process BOLD signals and compute observables.
-    
+    Core signal processing loop shared by process_bold_signals and process_empirical_subjects.
+
     Args:
-        bold_signals: Dictionary of subjects {subjectName: subjectBOLDSignal}
-        observables_list: List of observable specifications (e.g., ['FC,PS,KS'])
-        band_pass_filter: Optional band-pass filter to apply
+        signals: Dictionary of subjects {key: signal_array}
+        observables: Dictionary of {name: ObservableConfig}
         verbose: Whether to print progress information
-        
+        transpose: If True, transpose each signal before processing (for empirical data)
+
     Returns:
         Dictionary containing computed observables for all subjects
     """
-    num_subjects = len(bold_signals)
-    N = bold_signals[next(iter(bold_signals))].shape[1]
+    num_subjects = len(signals)
+    first_signal = signals[next(iter(signals))]
+    n_rois = first_signal.shape[0] if transpose else first_signal.shape[1]
 
-    observables = create_observables_dict(observables_list, band_pass_filter)
+    measure_values = {}
+    for ds, obs_config in observables.items():
+        measure_values[ds] = obs_config.init_accumulator(num_subjects, n_rois)
 
-    # First, let's create a data structure for the observables operations...
-    measureValues = {}
-    for ds in observables:  # Initialize data structs for each observable
-        measureValues[ds] = observables[ds].init_accumulator(num_subjects, N)
-
-    # Loop over subjects
-    for pos, s in enumerate(bold_signals):
+    for pos, s in enumerate(signals):
+        signal = signals[s].T if transpose else signals[s]
         if verbose:
-            print('   Processing signal {}/{} Subject: {} ({}x{})'.format(pos + 1, num_subjects, s, bold_signals[s].shape[0], bold_signals[s].shape[1]), end='', flush=True)
-        signal = bold_signals[s]  # LR_version_symm(tc[s])
+            print(f'   Processing signal {pos + 1}/{num_subjects} Subject: {s} ({signal.shape[0]}x{signal.shape[1]})',
+                  end='', flush=True)
         start_time = time.perf_counter()
 
-        for ds in observables:  # Now, let's compute each measure and store the results
-            observable_config = observables[ds]
-            measureValues[ds] = observable_config.process_signal(signal, pos, measureValues[ds])
+        for ds, obs_config in observables.items():
+            measure_values[ds] = obs_config.process_signal(signal, pos, measure_values[ds])
 
         if verbose:
-            print(" -> computed in {} seconds".format(time.perf_counter() - start_time))
+            print(f" -> {time.perf_counter() - start_time:.2f}s")
 
-    for ds in observables:  # finish computing each observable
-        observable_config = observables[ds]
-        measureValues[ds] = observable_config.postprocess(measureValues[ds])
+    for ds, obs_config in observables.items():
+        measure_values[ds] = obs_config.postprocess(measure_values[ds])
 
-    return measureValues
+    return measure_values
 
 
-def eval_one_param(exec_env, g):
+def process_bold_signals(bold_signals, observables, band_pass_filter=None, verbose=True):
+    """
+    Process BOLD signals and compute observables.
+
+    Args:
+        bold_signals: Dictionary of subjects {subjectName: subjectBOLDSignal}
+        observables: Either a dict of ObservableConfig or a list of observable specs (e.g., ['FC,PS,KS'])
+        band_pass_filter: Optional band-pass filter (only used when observables is a list)
+        verbose: Whether to print progress information
+
+    Returns:
+        Dictionary containing computed observables for all subjects
+    """
+    if not isinstance(observables, dict):
+        observables = create_observables_dict(observables, band_pass_filter)
+    return _process_signals(bold_signals, observables, verbose, transpose=False)
+
+
+def eval_one_param(exec_env: ExecEnv, g):
     if 'J_file_name_pattern' in exec_env:
         J_file_name_pattern = exec_env['J_file_name_pattern'].format(np.round(g, decimals=2))
         if os.path.exists(J_file_name_pattern):
@@ -429,19 +498,26 @@ def eval_one_param(exec_env, g):
     for nsub in range(num_subjects):  # trials. Originally it was 20.
         print(f"   Simulating g={g} -> subject {nsub}/{num_subjects}!!!")
         _, bds = simulate_single_subject(exec_env, g)
-        while np.isnan(bds).any() or (np.abs(bds) > np.inf).any():  # This is certainly dangerous, we can have an infinite loop... let's hope not! ;-)
+        if np.isnan(bds).any() or np.isinf(bds).any():
             raise RuntimeError(f"Numeric error computing subject {nsub}/{num_subjects} for g={g}")
         simulated_bolds[nsub] = bds
         gc.collect()
 
-    dist = process_bold_signals(simulated_bolds, exec_env['observables'], exec_env.get('bpf', None), exec_env.get('verbose', True))
+    dist = process_bold_signals(simulated_bolds, _get_observables_dict(exec_env), verbose=exec_env.get('verbose', True))
     # now, add {label: currValue} to the dist dictionary, so this info is in the saved file (if using the decorator @loadOrCompute)
     dist['g'] = g
 
     return dist
 
 
-def _finalize_sim_measures(exec_env, sim_measures, g, save=True):
+def _get_observables_dict(exec_env: ExecEnv):
+    """Get or create the observables dict, caching it in exec_env to avoid repeated creation."""
+    if '_observables_dict' not in exec_env:
+        exec_env['_observables_dict'] = create_observables_dict(exec_env['observables'], exec_env.get('bpf', None))
+    return exec_env['_observables_dict']
+
+
+def _finalize_sim_measures(exec_env: ExecEnv, sim_measures, g, save=True):
     """
     Common finalization logic for compute_g and compute_g_mp.
     
@@ -457,14 +533,14 @@ def _finalize_sim_measures(exec_env, sim_measures, g, save=True):
         sim_measures with distances added
     """
     out_file = exec_env['out_file']
-    observables = create_observables_dict(exec_env['observables'], exec_env.get('bpf', None))
+    observables = _get_observables_dict(exec_env)
     processed = exec_env['processed']
-    
+
     sim_measures['g'] = g
     compute_observables_distances(sim_measures, processed, observables)
     
     if save:
-        model_attribues = exec_env.get('model_attributes', {})
+        model_attribues = get_model_attributes(exec_env)
         for key, value in model_attribues.items():
             sim_measures[f'model_attr_{key}'] = value   
         hdf.savemat(out_file, sim_measures)
@@ -472,7 +548,7 @@ def _finalize_sim_measures(exec_env, sim_measures, g, save=True):
     return sim_measures
 
 
-def _print_distances(exec_env, sim_measures, g):
+def _print_distances(exec_env: ExecEnv, sim_measures, g):
     """
     Print distance metrics for all observables.
     
@@ -481,14 +557,14 @@ def _print_distances(exec_env, sim_measures, g):
         sim_measures: Dictionary containing computed distances
         g: Global coupling parameter value
     """
-    observables = create_observables_dict(exec_env['observables'], exec_env.get('bpf', None))
+    observables = _get_observables_dict(exec_env)
     for ds in observables:
         for dname in observables[ds].distance_measures:
             print(f" {ds} for g={g}: {sim_measures[f'dist_{ds}_{dname}']};", end='', flush=True)
     print()  # newline after all distances
 
 
-def _try_load_previous(exec_env, g):
+def _try_load_previous(exec_env: ExecEnv, g):
     """
     Check if previous results exist and should be loaded.
     
@@ -510,11 +586,12 @@ def _try_load_previous(exec_env, g):
     return None, False
 
 
-def compute_g(exec_env, g):
+def compute_g(exec_env: ExecEnv, g):
     sim_measures, was_loaded = _try_load_previous(exec_env, g)
     
     if not was_loaded:
         print(f"Starting computation for g={g}")
+        set_seed(secrets.randbits(32))
         sim_measures = eval_one_param(exec_env, g)
         sim_measures = _finalize_sim_measures(exec_env, sim_measures, g)
 
@@ -523,44 +600,73 @@ def compute_g(exec_env, g):
     return sim_measures
 
 
+def sweep_g_parallel(gs, base_exec_env: ExecEnv, out_file_pattern, nproc):
+    """
+    Sweep over G values in parallel using ProcessPoolExecutor with retry on failure.
+
+    Submits in batches of nproc to limit peak memory from pickling exec_env per task.
+    Only actually-failed G values are retried (not still-running ones).
+
+    Args:
+        gs: Array of G values to sweep
+        base_exec_env: Base execution environment dict (out_file will be set per G)
+        out_file_pattern: Format string for output file path, e.g. 'path/fitting_g_{}.mat'
+        nproc: Number of parallel worker processes
+    """
+    remaining_gs = list(gs)
+
+    while remaining_gs:
+        batch = remaining_gs[:nproc]
+        print(f'Submitting batch of {len(batch)}/{len(remaining_gs)} G values with {nproc} workers')
+
+        with ProcessPoolExecutor(max_workers=nproc) as pool:
+            future_to_g = {}
+            for gf in batch:
+                exec_env = ExecEnv(base_exec_env)
+                exec_env['out_file'] = out_file_pattern.format(np.round(gf, decimals=3))
+                future = pool.submit(compute_g, exec_env, gf)
+                future_to_g[future] = gf
+
+            failed_gs = []
+            for future in as_completed(future_to_g):
+                gf = future_to_g[future]
+                try:
+                    future.result()
+                    print(f"Finished g={gf}")
+                except Exception as exc:
+                    print(f"Failed g={gf}: {exc}")
+                    failed_gs.append(gf)
+
+        # Next iteration: retry failed from this batch + remaining unbatched
+        remaining_gs = failed_gs + remaining_gs[len(batch):]
+
+
+def sweep_g_sequential(gs, base_exec_env: ExecEnv, out_file_pattern, nproc):
+    """
+    Sweep over G values sequentially, parallelizing subjects within each G using compute_g_mp.
+
+    Args:
+        gs: Array of G values to sweep
+        base_exec_env: Base execution environment dict (out_file will be set per G)
+        out_file_pattern: Format string for output file path, e.g. 'path/fitting_g_{}.mat'
+        nproc: Number of parallel worker processes for subject simulation
+    """
+    for gf in gs:
+        exec_env = ExecEnv(base_exec_env)
+        exec_env['out_file'] = out_file_pattern.format(np.round(gf, decimals=3))
+        _, sim_measures = compute_g_mp(exec_env, gf, nproc)
+        if exec_env.get('verbose', True):
+            _print_distances(exec_env, sim_measures, gf)
+
+
 def process_empirical_subjects(bold_signals, observables: dict[str, ObservableConfig], verbose=True):
-    # Process the BOLD signals
-    # BOLDSignals is a dictionary of subjects {subjectName: subjectBOLDSignal}
-    # observables is a dictionary of {observableName: ObservableConfig}
-    num_subjects = len(bold_signals)
-    # get the first key to retrieve the value of N = number of areas
-    n_rois = bold_signals[next(iter(bold_signals))].shape[0]
-
-    # First, let's create a data structure for the observables operations...
-    measureValues = {}
-    
-    for ds, observable_config in observables.items():
-        measureValues[ds] = observable_config.init_accumulator(num_subjects, n_rois)
-
-    # Loop over subjects
-    for pos, s in enumerate(bold_signals):
-        # BOLD signals from file have inverse shape
-        signal = bold_signals[s].T  # need to be transposed for the rest of NeuroNumba...
-
-        print('   Processing signal {}/{} Subject: {} ({}x{})'.format(pos + 1, num_subjects, s, signal.shape[0],
-                                                                      signal.shape[1]), flush=True)
-
-        for ds, observable_config in observables.items():
-            start_time = time.perf_counter()
-            measureValues[ds] = observable_config.process_signal(signal, pos, measureValues[ds])
-            if verbose:
-                print(f"   Time to process observable {ds} for subject {s}: {time.perf_counter() - start_time:.2f} seconds")
-
-    for ds, observable_config in observables.items():
-        measureValues[ds] = observable_config.postprocess(measureValues[ds])
-
-    return measureValues
+    """Process empirical BOLD signals (transposes from (n_rois, t_max) to (t_max, n_rois))."""
+    return _process_signals(bold_signals, observables, verbose, transpose=True)
 
 
-def executor_simulate_single_subject(n, exec_env, g):
+def executor_simulate_single_subject(n, exec_env: ExecEnv, g):
     try:
-        seed = secrets.randbits(32)
-        np.random.seed(seed)  # Ensure reproducibility for each subject
+        set_seed(secrets.randbits(32))
         signal, bold = simulate_single_subject(exec_env, g)
         if exec_env.get('callback_simulate_single_subject', None) is not None:
             exec_env['callback_simulate_single_subject'](n, exec_env, signal, bold)
@@ -569,16 +675,15 @@ def executor_simulate_single_subject(n, exec_env, g):
         raise RuntimeError(f"Error simulating subject {n}: {e}")
 
 
-def executor_simulate_single_subject_raw(n, exec_env, g):
+def executor_simulate_single_subject_raw(n, exec_env: ExecEnv, g):
     try:
-        seed = secrets.randbits(32)
-        np.random.seed(seed)  # Ensure reproducibility for each subject
+        set_seed(secrets.randbits(32))
         return n, simulate(exec_env, g)
     except Exception as e:
         raise RuntimeError(f"Error simulating subject {n}: {e}")
         
 
-def execute_multiprocessing_simulation(exec_env, g, nproc, executor_func=None, result_key='simulated_data'):
+def execute_multiprocessing_simulation(exec_env: ExecEnv, g, nproc, executor_func=None, result_key='simulated_data'):
     """
     Execute simulation for multiple subjects using multiprocessing.
     
@@ -609,28 +714,29 @@ def execute_multiprocessing_simulation(exec_env, g, nproc, executor_func=None, r
     pending = subjects
     while len(pending) > 0:
         print(f"EXECUTOR --- START cycle for {len(pending)} subjects")
-        pool = ProcessPoolExecutor(max_workers=nproc)
-        futures = []
-        future2subj = {}
-        for n in pending:
-            f = pool.submit(executor_func, n, exec_env, g)
-            future2subj[f] = n
-            futures.append(f)
+        with ProcessPoolExecutor(max_workers=nproc) as pool:
+            futures = []
+            future2subj = {}
+            for n in pending:
+                f = pool.submit(executor_func, n, exec_env, g)
+                future2subj[f] = n
+                futures.append(f)
 
-        print(f"EXECUTOR --- WAITING for {len(futures)} futures to finish")
+            print(f"EXECUTOR --- WAITING for {len(futures)} futures to finish")
 
-        pending = []
-        for future in as_completed(futures):
-            try:
-                n, result = future.result()
-                results.append((n, result))
-                print(f"EXECUTOR --- FINISHED subject {n}")
-            except Exception as exc:
-                print(f"EXECUTOR --- FAIL subject {n}. Cause: {exc}. Restarting pool.")
-                pool.shutdown(wait=True, cancel_futures=True)
-                finished = [n for n, _ in results]
-                pending = [n for n in subjects if n not in finished]
-                break
+            pending = []
+            for future in as_completed(futures):
+                try:
+                    n, result = future.result()
+                    results.append((n, result))
+                    print(f"EXECUTOR --- FINISHED subject {n}")
+                except Exception as exc:
+                    n = future2subj[future]
+                    print(f"EXECUTOR --- FAIL subject {n}. Cause: {exc}. Restarting pool.")
+                    pool.shutdown(wait=True, cancel_futures=True)
+                    finished = [n for n, _ in results]
+                    pending = [n for n in subjects if n not in finished]
+                    break
 
     simulated_results = {}
     numerical_error = False
@@ -642,7 +748,7 @@ def execute_multiprocessing_simulation(exec_env, g, nproc, executor_func=None, r
     return simulated_results, numerical_error
 
 
-def execute_multiprocessing_simulation_bold(exec_env, g, nproc):
+def execute_multiprocessing_simulation_bold(exec_env: ExecEnv, g, nproc):
     """
     Execute BOLD simulation for multiple subjects using multiprocessing.
     
@@ -659,7 +765,7 @@ def execute_multiprocessing_simulation_bold(exec_env, g, nproc):
                                             'simulated_bolds')
 
 
-def execute_multiprocessing_simulation_raw(exec_env, g, nproc):
+def execute_multiprocessing_simulation_raw(exec_env: ExecEnv, g, nproc):
     """
     Execute raw signal simulation for multiple subjects using multiprocessing.
     
@@ -676,7 +782,7 @@ def execute_multiprocessing_simulation_raw(exec_env, g, nproc):
                                             'simulated_signals')
 
 
-def compute_g_mp(exec_env, g, nproc):
+def compute_g_mp(exec_env: ExecEnv, g, nproc):
     out_file = exec_env['out_file']
     
     # Check for previously computed results
@@ -692,7 +798,7 @@ def compute_g_mp(exec_env, g, nproc):
         print(f"EXECUTOR --- NUMERICAL ERROR for {out_file}")
         hdf.savemat(out_file, sim_measures)
     else:
-        sim_measures = process_bold_signals(simulated_bolds, exec_env['observables'], exec_env.get('bpf', None), exec_env.get('verbose', True))
+        sim_measures = process_bold_signals(simulated_bolds, _get_observables_dict(exec_env), verbose=exec_env.get('verbose', True))
         sim_measures = _finalize_sim_measures(exec_env, sim_measures, g)
 
     return simulated_bolds, sim_measures
@@ -759,85 +865,86 @@ def _attrs_to_label(attrs):
     return ", ".join(parts)
 
 
+def _format_metric_label(dist_key):
+    """Format a dist_key like 'dist_FC_PS' into a readable label like 'FC (PS)'."""
+    label = dist_key.replace('dist_', '')
+    parts = label.split('_')
+    if len(parts) >= 2:
+        return f"{parts[0]} ({parts[1]})"
+    return label
+
+
 def _plot_single_group(out_file_path, data, group_label, group_suffix, show=True):
     """
-    Generate a single plot for a group of fitting results.
-    
+    Generate a Deco2018 Figure 3A-style plot for a group of fitting results.
+
+    All distance metrics are overlaid on a single plot with dual y-axes
+    (left axis for the first metric, right axis for the second).
+
     Args:
         out_file_path: Path where the plot will be saved
         data: Dictionary of {dist_key: [(g, dist_value), ...]}
         group_label: Human-readable label for the group
         group_suffix: Safe filename suffix for the group
         show: Whether to display the plot
-        
+
     Returns:
         Path to the saved plot file
     """
     import matplotlib.pyplot as plt
-    
-    n_plots = len(data)
-    n_cols = min(3, n_plots)  # Maximum 3 columns
-    n_rows = (n_plots + n_cols - 1) // n_cols  # Ceiling division
-    
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows))
-    
-    # Add a super title with the group label
-    if group_label != "default":
-        fig.suptitle(group_label, fontsize=14, fontweight='bold', y=1.02)
-    
-    # Handle case where axes is not a 2D array
-    if n_plots == 1:
-        axes = np.array([[axes]])
-    elif n_rows == 1:
-        axes = axes.reshape(1, -1)
-    elif n_cols == 1:
-        axes = axes.reshape(-1, 1)
-    
-    for idx, (key, values) in enumerate(sorted(data.items())):
-        row = idx // n_cols
-        col = idx % n_cols
-        ax = axes[row, col]
-        
-        # Sort by g value for proper line plotting
+
+    # Colors matching Deco2018 Fig 3A: red for FC, green for FCD, then blue, orange...
+    colors = ['#d62728', '#2ca02c', '#1f77b4', '#ff7f0e', '#9467bd', '#8c564b']
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+
+    sorted_keys = sorted(data.keys())
+
+    global_max = 0.0
+    for idx, key in enumerate(sorted_keys):
+        values = data[key]
+        color = colors[idx % len(colors)]
+        label = _format_metric_label(key)
+
+        # Sort by G value
         sorted_values = sorted(values, key=lambda x: x[0])
-        g_values = [v[0] for v in sorted_values]
-        dist_values = [v[1] for v in sorted_values]
-        
-        ax.plot(g_values, dist_values, 'o-', markersize=6, linewidth=1.5)
-        ax.set_xlabel('Global Coupling (G)', fontsize=10)
-        ax.set_ylabel('Distance', fontsize=10)
-        ax.set_title(key.replace('dist_', ''), fontsize=12)
-        ax.grid(True, alpha=0.3)
-        
-        # Mark minimum value
-        min_idx = np.argmin(dist_values)
-        ax.axvline(x=g_values[min_idx], color='r', linestyle='--', alpha=0.5)
-        ax.scatter([g_values[min_idx]], [dist_values[min_idx]], color='r', s=100, zorder=5, marker='*')
-        ax.annotate(f'min: G={g_values[min_idx]:.2f}', 
-                   xy=(g_values[min_idx], dist_values[min_idx]),
-                   xytext=(5, 5), textcoords='offset points', fontsize=8)
-    
-    # Hide unused subplots
-    for idx in range(n_plots, n_rows * n_cols):
-        row = idx // n_cols
-        col = idx % n_cols
-        axes[row, col].set_visible(False)
-    
-    plt.tight_layout()
-    
-    # Save the figure with group suffix
+        g_values = np.array([v[0] for v in sorted_values])
+        dist_values = np.array([v[1] for v in sorted_values])
+        global_max = max(global_max, np.max(dist_values))
+
+        ax.plot(g_values, dist_values, '-', color=color, linewidth=2.5, label=label)
+
+        # Mark optimum: minimum for KS-type distances, maximum for PS (correlation)
+        if 'PS' in key:
+            opt_idx = np.argmax(dist_values)
+        else:
+            opt_idx = np.argmin(dist_values)
+        ax.axvline(x=g_values[opt_idx], color=color, linestyle='--', alpha=0.4, linewidth=1)
+
+    ax.set_ylim(0, global_max * 1.05)
+    ax.set_xlabel('Global Coupling', fontsize=12)
+    ax.set_ylabel('Fitting', fontsize=12)
+
+    if group_label != "default":
+        fig.suptitle(group_label, fontsize=14, fontweight='bold')
+
+    ax.legend(loc='upper center', fontsize=10, framealpha=0.8)
+
+    fig.tight_layout()
+
+    # Save the figure
     if group_suffix:
         plot_file = os.path.join(out_file_path, f'fitting_distances_plot_{group_suffix}.png')
     else:
         plot_file = os.path.join(out_file_path, 'fitting_distances_plot.png')
     plt.savefig(plot_file, dpi=300, bbox_inches='tight')
     print(f"Plot saved to: {plot_file}")
-    
+
     if show:
         plt.show()
     else:
         plt.close(fig)
-    
+
     return plot_file
 
 
@@ -996,8 +1103,8 @@ def run(args):
 
     if args.g is not None and not args.use_mp:
         # Single point execution for debugging purposes
-        compute_g({
-            'verbose':True,
+        exec_env: ExecEnv = {
+            'verbose': True,
             'model': args.model,
             'dt': dt,
             'weights': sc_norm,
@@ -1013,10 +1120,11 @@ def run(args):
             't_warmup': t_warmup,
             'sampling_period': sampling_period,
             'force_recomputations': False,
-        }, args.g)
+        }
+        compute_g(exec_env, args.g)
 
     elif args.g is not None and args.use_mp:
-        compute_g_mp({
+        exec_env: ExecEnv = {
             'verbose': True,
             'model': args.model,
             'dt': dt,
@@ -1031,68 +1139,38 @@ def run(args):
             'num_subjects': n_subj,
             't_max_neuronal': t_max_neuronal,
             't_warmup': t_warmup,
-            'sampling_period': sampling_period
-        }, args.g, args.nproc)
+            'sampling_period': sampling_period,
+        }
+        compute_g_mp(exec_env, args.g, args.nproc)
 
     elif args.g_range is not None:
         [g_Start, g_End, g_Step] = args.g_range
         gs = np.arange(g_Start, g_End + g_Step, g_Step)
 
-        results = []
-        remaining_gs = list(gs)
-        finished_gs = []
-          
-        while len(remaining_gs) > 0:
-            print(f'Creating process pool with {args.nproc} workers')
-            pool = ProcessPoolExecutor(max_workers=args.nproc)
-            futures = []
-            future_to_g = {}
-            
-            print(f"EXECUTOR --- START cycle for {len(remaining_gs)} gs")
-            for gf in remaining_gs:
-                exec_env = {
-                    'verbose': True,
-                    'model': args.model,
-                    'dt': dt,
-                    'weights': sc_norm,
-                    'processed': processed,
-                    'tr': tr,
-                    'observables': args.observables,
-                    'obs_var': args.obs_var,
-                    'bold': bold,
-                    'bold_model': bold_model,
-                    'out_file': out_file_name_pattern.format(np.round(gf, decimals=3)),
-                    'num_subjects': n_subj,
-                    't_max_neuronal': t_max_neuronal,
-                    't_warmup': t_warmup,
-                    'sampling_period': sampling_period
-                }
-                future = pool.submit(compute_g, exec_env, gf)
-                future_to_g[future] = gf
-                futures.append(future)
-
-            print(f"EXECUTOR --- WAITING for {len(futures)} futures to finish")
-            
-            remaining_gs = []
-            for future in as_completed(futures):
-                gf = future_to_g[future]
-                try:
-                    result = future.result()
-                    results.append(result)
-                    finished_gs.append(gf)
-                    print(f"EXECUTOR --- FINISHED process for g={gf}")
-                except Exception as exc:
-                    print(f"EXECUTOR --- FAIL computation for g={gf}. Error: {exc}")
-                    remaining_gs = [g for g in gs if g not in finished_gs]
-
-            pool.shutdown(wait=False, cancel_futures=True)
+        base_exec_env: ExecEnv = {
+            'verbose': True,
+            'model': args.model,
+            'dt': dt,
+            'weights': sc_norm,
+            'processed': processed,
+            'tr': tr,
+            'observables': args.observables,
+            'obs_var': args.obs_var,
+            'bold': bold,
+            'bold_model': bold_model,
+            'num_subjects': n_subj,
+            't_max_neuronal': t_max_neuronal,
+            't_warmup': t_warmup,
+            'sampling_period': sampling_period,
+        }
+        sweep_g_parallel(gs, base_exec_env, out_file_name_pattern, args.nproc)
 
     elif args.param is not None:
         # Parameter exploration
         param_explore = parse_parameter_definitions(args.param)
         
         # Create base execution environment
-        base_exec_env = {
+        base_exec_env: ExecEnv = {
             'verbose': True,
             'model': args.model,
             'dt': dt,
@@ -1108,7 +1186,7 @@ def run(args):
             't_warmup': t_warmup,
             'sampling_period': sampling_period,
             'force_recomputations': False,
-            "scale_signal": args.scale_signal
+            'scale_signal': args.scale_signal,
         }
         
         # Run parameter exploration
@@ -1248,7 +1326,7 @@ def generate_parameter_filename(param_set, prefix='fitting'):
     return fname
 
 
-def run_parameter_exploration(param_explore, base_exec_env, out_file_path, nproc, callback=None):
+def run_parameter_exploration(param_explore, base_exec_env: ExecEnv, out_file_path, nproc, callback=None):
     """
     Run parameter exploration with all combinations.
     
