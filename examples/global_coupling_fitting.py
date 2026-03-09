@@ -278,7 +278,7 @@ class IntegratorFactory:
     
     _configurations = {
         'Hopf': lambda dt: EulerStochastic(dt=dt, sigmas=np.r_[1e-2, 1e-2]),
-        'Deco2014': lambda dt: EulerStochastic(dt=dt, sigmas=np.r_[2e-4, 2e-4]),
+        'Deco2014': lambda dt: EulerStochastic(dt=dt, sigmas=np.r_[1e-2, 1e-2]),
         'Montbrio': lambda dt: EulerStochastic(dt=dt, sigmas=np.r_[0.0, 0.0, 0.0, 0.0, 1e-3, 1e-3]),
         'Zerlaut2O': lambda dt: EulerStochastic(dt=dt, sigmas=np.r_[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1e-3]),
     }
