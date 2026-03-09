@@ -30,18 +30,11 @@
 #
 # ==========================================================================
 # ==========================================================================
-from enum import IntEnum
-
 import numpy as np
 import numba as nb
-from scipy import linalg
 
 from neuronumba.basic.attr import Attr
-from neuronumba.numba_tools import addr
-from neuronumba.numba_tools.addr import address_as_void_pointer
-from neuronumba.numba_tools.types import NDA_f8_1d, NDA_f8_2d
 from neuronumba.simulator.models import Model
-from neuronumba.tools.matlab_tricks import correlation_from_covariance
 from neuronumba.numba_tools.config import NUMBA_CACHE, NUMBA_FASTMATH, NUMBA_NOGIL
 
 
@@ -54,20 +47,18 @@ class Hopf(Model):
     # supercritical Hopf bifurcation Constants
     # --------------------------------------------------------------------------
     # Values taken from [Deco_2017]
-    a = Attr(default=-0.5, attributes=Model.Type.Model)
-    omega = Attr(default=0.3, attributes=Model.Type.Model)
-    I_external = Attr(default=0.0, attributes=Model.Type.Model)
-    conservative = Attr(default=True, attributes=Model.Type.Model)
-    weights = Attr(required=True)
+    a = Attr(default=-0.5, attributes=Model.Tag.REGIONAL)
+    omega = Attr(default=0.3, attributes=Model.Tag.REGIONAL)
+    I_external = Attr(default=0.0, attributes=Model.Tag.REGIONAL)
+    conservative = Attr(default=True)
     g = Attr(required=True)
 
     weights_t = Attr(dependant=True)
-    sct = Attr(dependant=True)
     ink = Attr(dependant=True)
 
     def _init_dependant(self):
         super()._init_dependant()
-        self.weights_t = self.weights.T
+        self.weights_t = self.weights.T.copy()
         self.ink = self.weights_t.sum(axis=1)
 
     def initial_state(self, n_rois):
