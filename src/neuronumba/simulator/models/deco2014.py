@@ -70,59 +70,59 @@ class Deco2014(LinearCouplingModel):
     # ==========================================================================
     
     # Automatic FIC computation
-    auto_fic = Attr(default=True, attributes=Model.Type.Model,
+    auto_fic = Attr(default=True, attributes=Model.Tag.GLOBAL,
                    doc="Whether to automatically compute inhibitory coupling strength J using FIC")
     
     # Time constants (ms)
-    tau_e = Attr(default=100.0, attributes=Model.Type.Model,
+    tau_e = Attr(default=100.0, attributes=Model.Tag.REGIONAL,
                 doc="Excitatory population time constant (ms)")
-    tau_i = Attr(default=10.0, attributes=Model.Type.Model,
+    tau_i = Attr(default=10.0, attributes=Model.Tag.REGIONAL,
                 doc="Inhibitory population time constant (ms)")
     
     # Synaptic efficacy parameters
-    gamma_e = Attr(default=0.000641, attributes=Model.Type.Model,
+    gamma_e = Attr(default=0.000641, attributes=Model.Tag.REGIONAL,
                   doc="Excitatory synaptic efficacy")
-    gamma_i = Attr(default=0.001, attributes=Model.Type.Model,
+    gamma_i = Attr(default=0.001, attributes=Model.Tag.REGIONAL,
                   doc="Inhibitory synaptic efficacy")
     
     # External input parameters
-    I0 = Attr(default=0.382, attributes=Model.Type.Model,
+    I0 = Attr(default=0.382, attributes=Model.Tag.REGIONAL,
              doc="Overall effective external input (nA)")
-    Jext_e = Attr(default=1.0, attributes=Model.Type.Model,
+    Jext_e = Attr(default=1.0, attributes=Model.Tag.REGIONAL,
                  doc="External input scaling for excitatory population")
-    Jext_i = Attr(default=0.7, attributes=Model.Type.Model,
+    Jext_i = Attr(default=0.7, attributes=Model.Tag.REGIONAL,
                  doc="External input scaling for inhibitory population")
     
     # Recurrent connectivity parameters
-    w = Attr(default=1.4, attributes=Model.Type.Model,
+    w = Attr(default=1.4, attributes=Model.Tag.REGIONAL,
             doc="Local recurrent excitatory connection strength")
-    J_NMDA = Attr(default=0.15, attributes=Model.Type.Model,
+    J_NMDA = Attr(default=0.15, attributes=Model.Tag.REGIONAL,
                  doc="NMDA synaptic coupling strength (nA)")
-    J = Attr(default=1.0, attributes=Model.Type.Model,
+    J = Attr(default=1.0, attributes=Model.Tag.REGIONAL,
             doc="Local inhibitory coupling strength")
     
     # Sigmoid activation function parameters for excitatory population
-    ae = Attr(default=310.0, attributes=Model.Type.Model,
+    ae = Attr(default=310.0, attributes=Model.Tag.REGIONAL,
              doc="Excitatory gain parameter (nC^-1)")
-    be = Attr(default=125.0, attributes=Model.Type.Model,
+    be = Attr(default=125.0, attributes=Model.Tag.REGIONAL,
              doc="Excitatory threshold parameter (Hz)")
-    de = Attr(default=0.16, attributes=Model.Type.Model,
+    de = Attr(default=0.16, attributes=Model.Tag.REGIONAL,
              doc="Excitatory slope parameter (s)")
     
     # Sigmoid activation function parameters for inhibitory population
-    ai = Attr(default=615.0, attributes=Model.Type.Model,
+    ai = Attr(default=615.0, attributes=Model.Tag.REGIONAL,
              doc="Inhibitory gain parameter (nC^-1)")
-    bi = Attr(default=177.0, attributes=Model.Type.Model,
+    bi = Attr(default=177.0, attributes=Model.Tag.REGIONAL,
              doc="Inhibitory threshold parameter (Hz)")
-    di = Attr(default=0.087, attributes=Model.Type.Model,
+    di = Attr(default=0.087, attributes=Model.Tag.REGIONAL,
              doc="Inhibitory slope parameter (s)")
     
     # External stimulation
-    I_external = Attr(default=0.0, attributes=Model.Type.Model,
+    I_external = Attr(default=0.0, attributes=Model.Tag.REGIONAL,
                      doc="Additional external current input (nA)")
     
     # Steady state computation options
-    recompute_steady_state = Attr(default=False, attributes=Model.Type.Model,
+    recompute_steady_state = Attr(default=False, attributes=Model.Tag.GLOBAL,
                                  doc="Whether to recompute steady state values")
 
     # ==========================================================================

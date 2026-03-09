@@ -23,28 +23,28 @@ class Deco2018(LinearCouplingModel):
     _coupling_var_names = ['S_e']
     _observable_var_names = ['Ie', 're']
 
-    auto_fic = Attr(default=True, attributes=Model.Type.Model)
-    taon = Attr(default=100.0, attributes=Model.Type.Model)
-    taog = Attr(default=10.0, attributes=Model.Type.Model)
-    gamma_e = Attr(default=0.641, attributes=Model.Type.Model)
-    gamma_i = Attr(default=1.0, attributes=Model.Type.Model)
-    I0 = Attr(default=0.382, attributes=Model.Type.Model)     # [nA] overall effective external input
-    w = Attr(default=1.4, attributes=Model.Type.Model)
-    J_NMDA = Attr(default=0.15, attributes=Model.Type.Model)  # [nA] NMDA current
-    Jext_e = Attr(default=1.0, attributes=Model.Type.Model)
-    Jext_i = Attr(default=0.7, attributes=Model.Type.Model)
-    ae = Attr(default=310.0, attributes=Model.Type.Model)
-    be = Attr(default=125.0, attributes=Model.Type.Model)
-    de = Attr(default=0.16, attributes=Model.Type.Model)
-    ai = Attr(default=615.0, attributes=Model.Type.Model)
-    bi = Attr(default=177.0, attributes=Model.Type.Model)
-    di = Attr(default=0.087, attributes=Model.Type.Model)
-    J = Attr(default=1.0, attributes=Model.Type.Model)
-    I_external = Attr(default=0.0, attributes=Model.Type.Model)
+    auto_fic = Attr(default=True)
+    taon = Attr(default=100.0, attributes=Model.Tag.REGIONAL)
+    taog = Attr(default=10.0, attributes=Model.Tag.REGIONAL)
+    gamma_e = Attr(default=0.641, attributes=Model.Tag.REGIONAL)
+    gamma_i = Attr(default=1.0, attributes=Model.Tag.REGIONAL)
+    I0 = Attr(default=0.382, attributes=Model.Tag.REGIONAL)     # [nA] overall effective external input
+    w = Attr(default=1.4, attributes=Model.Tag.REGIONAL)
+    J_NMDA = Attr(default=0.15, attributes=Model.Tag.REGIONAL)  # [nA] NMDA current
+    Jext_e = Attr(default=1.0, attributes=Model.Tag.REGIONAL)
+    Jext_i = Attr(default=0.7, attributes=Model.Tag.REGIONAL)
+    ae = Attr(default=310.0, attributes=Model.Tag.REGIONAL)
+    be = Attr(default=125.0, attributes=Model.Tag.REGIONAL)
+    de = Attr(default=0.16, attributes=Model.Tag.REGIONAL)
+    ai = Attr(default=615.0, attributes=Model.Tag.REGIONAL)
+    bi = Attr(default=177.0, attributes=Model.Tag.REGIONAL)
+    di = Attr(default=0.087, attributes=Model.Tag.REGIONAL)
+    J = Attr(default=1.0, attributes=Model.Tag.REGIONAL)
+    I_external = Attr(default=0.0, attributes=Model.Tag.REGIONAL)
 
-    receptor = Attr(default=0.0, attributes=Model.Type.Model)
-    w_gain_e = Attr(default=0.0, attributes=Model.Type.Model)
-    w_gain_i = Attr(default=0.0, attributes=Model.Type.Model)
+    receptor = Attr(default=0.0, attributes=Model.Tag.REGIONAL)
+    w_gain_e = Attr(default=0.0, attributes=Model.Tag.REGIONAL)
+    w_gain_i = Attr(default=0.0, attributes=Model.Tag.REGIONAL)
 
     @overrides
     def _init_dependant(self):

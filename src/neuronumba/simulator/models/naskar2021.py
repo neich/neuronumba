@@ -44,31 +44,28 @@ class Naskar2021(LinearCouplingModel):
     _coupling_var_names = ['S_e']
     _observable_var_names = ['Ie', 're']
 
-    t_glu = Attr(default=7.46, attributes=Model.Type.Model)    # concentration of glutamate
-    t_gaba = Attr(default=1.82, attributes=Model.Type.Model)   # concentration of GABA
-    We = Attr(default=1.0, attributes=Model.Type.Model)        # scaling of external input current to excitatory population
-    Wi = Attr(default=0.7, attributes=Model.Type.Model)        # scaling of external input current to inhibitory population
-    I0 = Attr(default=0.382, attributes=Model.Type.Model)      #.397  # [nA] overall effective external input
-    w = Attr(default=1.4, attributes=Model.Type.Model)         # weight for recurrent self-excitation in each excitatory population
-    J_NMDA = Attr(default=0.15, attributes=Model.Type.Model)   # [nA] NMDA current
-    M_e = Attr(default=1.0, attributes=Model.Type.Model)
-    ae = Attr(default=310.0, attributes=Model.Type.Model)      # [nC^{-1}], g_E in the paper
-    be = Attr(default=125.0, attributes=Model.Type.Model)      # = g_E * I^{(E)_{thr}} in the paper = 310 * .403 [nA] = 124.93
-    de = Attr(default=0.16, attributes=Model.Type.Model)
-    ai = Attr(default=615.0, attributes=Model.Type.Model)      # [nC^{-1}], g_I in the paper
-    bi = Attr(default=177.0, attributes=Model.Type.Model)      # = g_I * I^{(I)_{thr}} in the paper = 615 * .288 [nA] = 177.12
-    di = Attr(default=0.087, attributes=Model.Type.Model)
-    M_i = Attr(default=1.0, attributes=Model.Type.Model)
-    alfa_e = Attr(default=0.072, attributes=Model.Type.Model)  # forward rate constant for NMDA gating
-    alfa_i = Attr(default=0.53, attributes=Model.Type.Model)   # forward rate constant for GABA gating
-    B_e = Attr(default=0.0066, attributes=Model.Type.Model)    # ms^-1  backward rate constant for NMDA gating
-    B_i = Attr(default=0.18, attributes=Model.Type.Model)      # ms^-1  backward rate constant for GABA gating
-    gamma = Attr(default=1.0, attributes=Model.Type.Model)     # Learning rate
-    rho = Attr(default=3.0, attributes=Model.Type.Model)       # target-firing rate of the excitatory population is maintained at the 3 Hz
-    I_external = Attr(default=0.0, attributes=Model.Type.Model)
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    t_glu = Attr(default=7.46, attributes=Model.Tag.REGIONAL)    # concentration of glutamate
+    t_gaba = Attr(default=1.82, attributes=Model.Tag.REGIONAL)   # concentration of GABA
+    We = Attr(default=1.0, attributes=Model.Tag.REGIONAL)        # scaling of external input current to excitatory population
+    Wi = Attr(default=0.7, attributes=Model.Tag.REGIONAL)        # scaling of external input current to inhibitory population
+    I0 = Attr(default=0.382, attributes=Model.Tag.REGIONAL)      #.397  # [nA] overall effective external input
+    w = Attr(default=1.4, attributes=Model.Tag.REGIONAL)         # weight for recurrent self-excitation in each excitatory population
+    J_NMDA = Attr(default=0.15, attributes=Model.Tag.REGIONAL)   # [nA] NMDA current
+    M_e = Attr(default=1.0, attributes=Model.Tag.REGIONAL)
+    ae = Attr(default=310.0, attributes=Model.Tag.REGIONAL)      # [nC^{-1}], g_E in the paper
+    be = Attr(default=125.0, attributes=Model.Tag.REGIONAL)      # = g_E * I^{(E)_{thr}} in the paper = 310 * .403 [nA] = 124.93
+    de = Attr(default=0.16, attributes=Model.Tag.REGIONAL)
+    ai = Attr(default=615.0, attributes=Model.Tag.REGIONAL)      # [nC^{-1}], g_I in the paper
+    bi = Attr(default=177.0, attributes=Model.Tag.REGIONAL)      # = g_I * I^{(I)_{thr}} in the paper = 615 * .288 [nA] = 177.12
+    di = Attr(default=0.087, attributes=Model.Tag.REGIONAL)
+    M_i = Attr(default=1.0, attributes=Model.Tag.REGIONAL)
+    alfa_e = Attr(default=0.072, attributes=Model.Tag.REGIONAL)  # forward rate constant for NMDA gating
+    alfa_i = Attr(default=0.53, attributes=Model.Tag.REGIONAL)   # forward rate constant for GABA gating
+    B_e = Attr(default=0.0066, attributes=Model.Tag.REGIONAL)    # ms^-1  backward rate constant for NMDA gating
+    B_i = Attr(default=0.18, attributes=Model.Tag.REGIONAL)      # ms^-1  backward rate constant for GABA gating
+    gamma = Attr(default=1.0, attributes=Model.Tag.REGIONAL)     # Learning rate
+    rho = Attr(default=3.0, attributes=Model.Tag.REGIONAL)       # target-firing rate of the excitatory population is maintained at the 3 Hz
+    I_external = Attr(default=0.0, attributes=Model.Tag.REGIONAL)
 
     def initial_state(self, n_rois):
         state = np.empty((Naskar2021.n_state_vars, n_rois))

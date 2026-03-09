@@ -1,55 +1,19 @@
 import inspect
-from enum import Enum
-
-class AttrEnum(set):
-    def __init__(self, value=None):
-        super().__init__()
-        self._pre = []
-        self._value = value
-
-    def __set_name__(self, owner, name):
-        self._name = owner.__name__
-        base_chain = inspect.getmro(owner)
-        if len(base_chain) > 2:
-            self._pre.append(base_chain[1])
-        self._additems(self._value)
-
-    def _getfullname(self, name):
-        return self._name + "." + name
-
-    def __getattr__(self, name):
-        if name.startswith('_'):
-            return self.__dict__[name]
-        full_name = self._getfullname(name)
-        if full_name in self:
-            return full_name
-        else:
-            for pre in self._pre:
-                if getattr(pre, name):
-                    return pre._getfullname(name)
-        raise AttributeError
-
-    def _additems(self, value):
-        if isinstance(value, str):
-            self.add(self._getfullname(value))
-        elif isinstance(value, list):
-            self.update([self._getfullname(x) for x in value])
-        else:
-            raise TypeError(f"Cannot update AttrEnum with type {type(value)}")
 
 
 class Attr(object):
 
+    _DEFAULT_TAG = 'unknown'
+
     def __init__(self, default=None, required=True, dependant=False, attributes=None, doc=None):
         if attributes is None:
-            self.attributes = []
+            self.attributes = [Attr._DEFAULT_TAG]
+        elif isinstance(attributes, list):
+            self.attributes = attributes
+        elif isinstance(attributes, str):
+            self.attributes = [attributes]
         else:
-            if isinstance(attributes, list):
-                self.attributes = attributes
-            elif isinstance(attributes, str):
-                self.attributes = [attributes]
-            else:
-                raise TypeError(f"Cannot initialize Attr attributes with type {type(attributes)}")
+            raise TypeError(f"Cannot initialize Attr attributes with type {type(attributes)}")
         self.default = default
         self.required = bool(required)
         self.dependant = dependant
@@ -57,25 +21,30 @@ class Attr(object):
 
 
 class HasAttr(object):
-    Type = AttrEnum(['Unknown'])
+
+    class Tag:
+        """Base attribute tags. Subclasses can extend via inheritance."""
+        UNKNOWN = 'unknown'
 
     def __init__(self, **kwargs):
         self._defined_attrs = {}
-        self._init_attributes(kwargs)
+        self._configured = False
+        self._set_defaults()
+        self._set_values(kwargs)
+        if self._has_all_required():
+            self.configure()
 
-    def _attr_defined(self, attr):
-        return attr in self._defined_attrs
+    def _set_defaults(self):
+        """Set default values for all non-dependant attributes."""
+        for name, attr in type(self)._get_attributes().items():
+            if not attr.dependant:
+                setattr(self, name, attr.default)
 
-    def _init_attributes(self, kwargs, set_default=True):
+    def _set_values(self, attrs):
+        """Validate and set attribute values."""
         cls = type(self)
-        class_attrs = dict(inspect.getmembers(cls, lambda o: isinstance(o, Attr)))
-        if set_default:
-            # Initialize all attributes with its default
-            for name, value in class_attrs.items():
-                if not value.dependant:
-                    setattr(self, name, value.default)
-        # Set values of defined attributes in the arguments
-        for name, value in kwargs.items():
+        class_attrs = cls._get_attributes()
+        for name, value in attrs.items():
             if name not in class_attrs:
                 raise AttributeError(f"Attribute <{name}> not found in <{cls.__name__}>!")
             if class_attrs[name].dependant:
@@ -84,22 +53,43 @@ class HasAttr(object):
             setattr(self, name, value)
             self._defined_attrs[name] = value
 
+    def _has_all_required(self):
+        """Check whether all required non-dependant attributes have values."""
+        for name, attr in type(self)._get_attributes().items():
+            if attr.required and not attr.dependant and getattr(self, name, None) is None:
+                return False
+        return True
+
+    def _attr_defined(self, attr):
+        return attr in self._defined_attrs
+
     @classmethod
     def _get_attributes(cls):
         return dict(inspect.getmembers(cls, lambda o: isinstance(o, Attr)))
 
+    @property
+    def configured(self):
+        return self._configured
+
     def configure(self, **kwargs):
-        self._init_attributes(kwargs, set_default=False)
+        """Update attributes and (re)compute dependant values.
+
+        Automatically called from the constructor when all required attributes
+        have values. Can also be called explicitly to provide additional
+        attributes or trigger recomputation.
+        """
+        if kwargs:
+            self._set_values(kwargs)
         self._check_required()
         self._init_dependant()
         self._init_dependant_automatic()
+        self._configured = True
         return self
 
     def _check_required(self):
         cls = type(self)
-        class_attrs = dict(inspect.getmembers(cls, lambda o: isinstance(o, Attr)))
-        for name, value in class_attrs.items():
-            if value.required and getattr(self, name) is None:
+        for name, attr in cls._get_attributes().items():
+            if attr.required and not attr.dependant and getattr(self, name) is None:
                 raise AttributeError(f"Attribute <{name}> of class <{cls.__name__}> has no value and is required to have one!")
 
     def _init_dependant(self):
@@ -108,28 +98,18 @@ class HasAttr(object):
     def _init_dependant_automatic(self):
         pass
 
-    def set_attributes(self, kwargs):
-        cls = type(self)
-        class_attrs = dict(inspect.getmembers(cls, lambda o: isinstance(o, Attr)))
-        # Set values of defined attributes in the arguments
-        for name, value in kwargs.items():
-            if name not in class_attrs:
-                raise AttributeError(f"Attribute <{name}> not found in <{cls.__name__}>!")
-            if class_attrs[name].dependant:
-                raise AttributeError(
-                    f"Attribute <{name}> of class <{cls.__name__}> is dependant and cannot be manually initialized!")
-            setattr(self, name, value)
-            self._defined_attrs[name] = value
-        
+    def set_attributes(self, attrs):
+        """Set attribute values without recomputing dependants.
+
+        Use configure() instead unless you need to batch-set multiple
+        attributes before a single configure() call.
+        """
+        self._set_values(attrs)
         return self
 
     def get_attributes(self):
         attrs = {}
-        cls = type(self)
-        class_attrs = dict(inspect.getmembers(cls, lambda o: isinstance(o, Attr)))
-        # Set values of defined attributes in the arguments
-        for name, value in class_attrs.items():
-            if not class_attrs[name].dependant:
+        for name, attr in type(self)._get_attributes().items():
+            if not attr.dependant:
                 attrs[name] = getattr(self, name)
-
         return attrs

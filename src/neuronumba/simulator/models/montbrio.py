@@ -28,45 +28,45 @@ class Montbrio(LinearCouplingModel):
     _observable_var_names = []
 
     # Automatic FIC computation
-    auto_fic = Attr(default=False, attributes=Model.Type.Model,
+    auto_fic = Attr(default=False,
                    doc="Whether to automatically compute inhibitory coupling strength J using FIC")
 
     # Time constants (ms)
-    tau_e = Attr(default=10.0, attributes=Model.Type.Model)
-    tau_i = Attr(default=10.0, attributes=Model.Type.Model)
-    tau_N = Attr(default=10.0, attributes=Model.Type.Model)
+    tau_e = Attr(default=10.0, attributes=Model.Tag.REGIONAL)
+    tau_i = Attr(default=10.0, attributes=Model.Tag.REGIONAL)
+    tau_N = Attr(default=10.0, attributes=Model.Tag.REGIONAL)
     
     # Firing rate parameters
-    delta_e = Attr(default=1.0, attributes=Model.Type.Model)
-    delta_i = Attr(default=1.0, attributes=Model.Type.Model)
-    eta_e = Attr(default=1.0, attributes=Model.Type.Model)
-    eta_i = Attr(default=1.0, attributes=Model.Type.Model)
+    delta_e = Attr(default=1.0, attributes=Model.Tag.REGIONAL)
+    delta_i = Attr(default=1.0, attributes=Model.Tag.REGIONAL)
+    eta_e = Attr(default=1.0, attributes=Model.Tag.REGIONAL)
+    eta_i = Attr(default=1.0, attributes=Model.Tag.REGIONAL)
     
     # Synaptic parameters
-    a_e = Attr(default=0.25, attributes=Model.Type.Model)
-    a_i = Attr(default=1.0, attributes=Model.Type.Model)
-    g_e = Attr(default=2.5, attributes=Model.Type.Model)
-    g_i = Attr(default=0, attributes=Model.Type.Model)
-    g_ee = Attr(default=2.5, attributes=Model.Type.Model)
-    g_ei = Attr(default=0.0, attributes=Model.Type.Model)
-    g_ie = Attr(default=2.5, attributes=Model.Type.Model)
-    g_ii = Attr(default=0.0, attributes=Model.Type.Model)
+    a_e = Attr(default=0.25, attributes=Model.Tag.REGIONAL)
+    a_i = Attr(default=1.0, attributes=Model.Tag.REGIONAL)
+    g_e = Attr(default=2.5, attributes=Model.Tag.REGIONAL)
+    g_i = Attr(default=0, attributes=Model.Tag.REGIONAL)
+    g_ee = Attr(default=2.5, attributes=Model.Tag.REGIONAL)
+    g_ei = Attr(default=0.0, attributes=Model.Tag.REGIONAL)
+    g_ie = Attr(default=2.5, attributes=Model.Tag.REGIONAL)
+    g_ii = Attr(default=0.0, attributes=Model.Tag.REGIONAL)
 
     # External inputs and coupling strengths
-    I_e_ext = Attr(default=0.0, attributes=Model.Type.Model)
-    I_i_ext = Attr(default=0.0, attributes=Model.Type.Model)
-    J_A = Attr(default=1.0, attributes=Model.Type.Model)
-    J_ee = Attr(default=10.0, attributes=Model.Type.Model)
-    J_ei = Attr(default=10.0, attributes=Model.Type.Model)
-    J_ie = Attr(default=10.0, attributes=Model.Type.Model)
-    J_ii = Attr(default=10.0, attributes=Model.Type.Model)
-    J = Attr(default=10.0, attributes=Model.Type.Model)
+    I_e_ext = Attr(default=0.0, attributes=Model.Tag.REGIONAL)
+    I_i_ext = Attr(default=0.0, attributes=Model.Tag.REGIONAL)
+    J_A = Attr(default=1.0, attributes=Model.Tag.REGIONAL)
+    J_ee = Attr(default=10.0, attributes=Model.Tag.REGIONAL)
+    J_ei = Attr(default=10.0, attributes=Model.Tag.REGIONAL)
+    J_ie = Attr(default=10.0, attributes=Model.Tag.REGIONAL)
+    J_ii = Attr(default=10.0, attributes=Model.Tag.REGIONAL)
+    J = Attr(default=10.0, attributes=Model.Tag.REGIONAL)
 
     # Dependent parameters
-    J_G_ei = Attr(dependant=True, attributes=Model.Type.Model)
-    J_G_ii = Attr(dependant=True, attributes=Model.Type.Model)
-    J_N_ee = Attr(dependant=True, attributes=Model.Type.Model)
-    J_N_ie = Attr(dependant=True, attributes=Model.Type.Model)
+    J_G_ei = Attr(dependant=True, attributes=Model.Tag.REGIONAL)
+    J_G_ii = Attr(dependant=True, attributes=Model.Tag.REGIONAL)
+    J_N_ee = Attr(dependant=True, attributes=Model.Tag.REGIONAL)
+    J_N_ie = Attr(dependant=True, attributes=Model.Tag.REGIONAL)
 
     @overrides
     def _init_dependant(self) -> None:
