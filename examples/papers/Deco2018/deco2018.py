@@ -14,7 +14,6 @@ from global_coupling_fitting import (
 )
 from papers.Deco2018.serotonin2A import Deco2018
 from neuronumba.fitting.fic.fic import FICHerzog2022
-from neuronumba.simulator.integrators import EulerStochastic
 from neuronumba.simulator.simulator import simulate_nodelay
 from neuronumba.tools import hdf
 from neuronumba.tools.filters import BandPassFilter
@@ -25,7 +24,7 @@ out_file_path = "./Data_Produced"
 
 # Register Deco2018 model and its integrator configuration in the factories
 ModelFactory.add_model('Deco2018', lambda: Deco2018())
-IntegratorFactory.add_integrator_config('Deco2018', lambda dt: EulerStochastic(dt=dt, sigmas=np.r_[1e-3, 1e-3]))
+IntegratorFactory.add_integrator_config('Deco2018', np.r_[1e-2, 1e-2])
 
 
 SUBSAMPLE_STEP = 100
