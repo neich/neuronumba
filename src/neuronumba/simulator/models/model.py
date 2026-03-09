@@ -1,20 +1,37 @@
-import os
+from abc import ABC, abstractmethod
 from enum import IntEnum
+from typing import NamedTuple
 
 import numba as nb
 import numpy as np
 from overrides import overrides
 
-from neuronumba.basic.attr import HasAttr, Attr, AttrEnum
+from neuronumba.basic.attr import HasAttr, Attr
 from neuronumba.numba_tools.config import NUMBA_CACHE, NUMBA_FASTMATH, NUMBA_NOGIL
 
 
-class Model(HasAttr):
-    Type = AttrEnum(['Model', 'ModelAux'])
+class VarInfo(NamedTuple):
+    """Information about a model variable (state or observable)."""
+    is_state: bool        # True if state variable, False if observable
+    buffer_index: int     # Index into the state/observable output buffer
+    original_index: int   # Index into the state_vars or observable_vars dict
+
+
+class Model(HasAttr, ABC):
+
+    class Tag(HasAttr.Tag):
+        """Attribute tags for Model parameters.
+
+        REGIONAL: per-ROI scalar params, packed into the parameter matrix (self.m).
+        GLOBAL: non-ROI array params, packed into the auxiliary dict (self.m_aux).
+        """
+        REGIONAL = 'regional'
+        GLOBAL = 'global'
 
     weights = Attr(required=True)
     n_rois = Attr(dependant=True)
     m = Attr(dependant=True)
+    m_aux = Attr(dependant=True)
 
     # ---------------------------------------------------------------
     # Model interface: subclasses declare these lists of variable names
@@ -70,20 +87,8 @@ class Model(HasAttr):
             # Resolve names to integer indices using state_vars
             cls.c_vars = [cls.state_vars[name] for name in cls._coupling_var_names]
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        cls = type(self)
-        p, p_aux = cls._build_parameter_enum()
-        setattr(cls, 'P', p)
-        setattr(cls, 'P_aux', p_aux)
-
     def configure(self, **kwargs):
-        # Kind of a hack to avoid dynamic class variables not being copied when using multiprocessing on Windows
-        if os.name == "nt":
-            cls = type(self)
-            p, p_aux = cls._build_parameter_enum()
-            setattr(cls, 'P', p)
-            setattr(cls, 'P_aux', p_aux)
+        self.P, self.P_aux = type(self)._build_parameter_enum()
         super().configure(**kwargs)
         return self
 
@@ -93,8 +98,8 @@ class Model(HasAttr):
 
     @classmethod
     def _build_parameter_enum(cls):
-        attrs = [name for name, value in cls._get_attributes().items() if Model.Type.Model in value.attributes]
-        attrs_aux = [name for name, value in cls._get_attributes().items() if Model.Type.ModelAux in value.attributes]
+        attrs = [name for name, value in cls._get_attributes().items() if Model.Tag.REGIONAL in value.attributes]
+        attrs_aux = [name for name, value in cls._get_attributes().items() if Model.Tag.GLOBAL in value.attributes]
         p = IntEnum('P', {k: i for i, k in enumerate(attrs)})
         p_aux = IntEnum('P_aux', {k: i for i, k in enumerate(attrs_aux)})
         return p, p_aux
@@ -106,15 +111,16 @@ class Model(HasAttr):
         i_obs = 0
         for v in v_list:
             if v in self.state_vars:
-                result[v] = (True, i_state, self.state_vars[v])
+                result[v] = VarInfo(is_state=True, buffer_index=i_state, original_index=self.state_vars[v])
                 i_state += 1
             elif v in self.observable_vars:
-                result[v] = (False, i_obs, self.observable_vars[v])
+                result[v] = VarInfo(is_state=False, buffer_index=i_obs, original_index=self.observable_vars[v])
                 i_obs += 1
             else:
                 raise AttributeError(f"Variable <{v}> is not in the state or observable variables list!")
         return result
 
+    @abstractmethod
     def get_numba_dfun(self):
         """Return a @nb.njit compiled function that computes state derivatives and observables.
 
@@ -126,12 +132,12 @@ class Model(HasAttr):
         - d_state:  shape (n_state_vars, n_rois) — time derivatives
         - observed: shape (n_observable_vars, n_rois) or (1,1) if no observables
         """
-        raise NotImplementedError
 
+    @abstractmethod
     def initial_state(self, n_rois):
         """Return the initial state array of shape (n_state_vars, n_rois)."""
-        raise NotImplementedError
 
+    @abstractmethod
     def get_numba_coupling(self):
         """Return a @nb.njit compiled coupling function.
 
@@ -141,7 +147,6 @@ class Model(HasAttr):
         - state_coupled: shape (len(c_vars), n_rois)
         - coupling:      shape (len(c_vars), n_rois)
         """
-        raise NotImplementedError
 
     def get_jacobian(self, sc):
         """
@@ -150,22 +155,20 @@ class Model(HasAttr):
         raise NotImplementedError
 
     def get_noise_matrix(self, sigma, N):
-        """
-        computes the covariance noise matrix of the model
+        """Compute the covariance noise matrix of the model.
 
-        :param sigma: the noise amplitude, format one value, type float
+        Args:
+            sigma: Noise amplitude (scalar).
+            N: Number of brain regions.
 
-        :return: the covariance noise matrix Qn, format (2 n_roi, 2 n_roi)
+        Returns:
+            Covariance noise matrix Qn of shape (n_state_vars * N, n_state_vars * N).
         """
-        # =============== Build Qn
-        Qn = (sigma ** 2) * np.eye(2 * N)  # covariance matrix of the noise
+        Qn = (sigma ** 2) * np.eye(self.n_state_vars * N)
         return Qn
 
     def as_array(self, param):
-        if isinstance(param, np.ndarray):
-            return param
-        else:
-            return np.r_[param]
+        return np.atleast_1d(param)
 
     def _init_dependant_automatic(self):
         self.m = np.empty((len(self.P), self.n_rois))
@@ -182,7 +185,7 @@ class Model(HasAttr):
 
 
 class LinearCouplingModel(Model):
-    g = Attr(default=1.0, attributes=Model.Type.Model)
+    g = Attr(default=1.0, attributes=Model.Tag.REGIONAL)
 
     weights_t = Attr(dependant=True)
 
