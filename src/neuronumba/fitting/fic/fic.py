@@ -27,7 +27,6 @@ class FICDeco2014(FIC):
     integrator = Attr(required=True)
     t_max = Attr(default=10000.0)
     t_warmup = Attr(default=1000.0)
-    rest_rate = Attr(default=0.4032)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -65,7 +64,6 @@ class FICDeco2014(FIC):
         currm = np.mean(curr[tmin:tmax, :], 0)  # takes the mean of all xn values along dimension 1...
         # This is the "averaged level of the input of the local excitatory pool of each brain area,
         # i.e., I_i^{(E)}" in the text (pp 7889, right column, subsection "FIC").
-        flag = 0
         if self.very_verbose: print()
         if self.very_verbose: print("[", end='')
         # ===========================================================
@@ -73,7 +71,7 @@ class FICDeco2014(FIC):
         num_above_error = 0
         largest_distance = 0
         # total_error = 0.0
-        Si = np.zeros((N,))
+        # Si = np.zeros((N,))
         for i in range(N):
             # ie_100 = curr[i]  # d_raw[-100:-1, 1, i, 0]  # I_e
             # ie = currm[i]  # np.average(ie_100)
@@ -110,8 +108,7 @@ class FICDeco2014(FIC):
     def compute_J(self, sc, g):
         # simulation fixed parameters:
         # ----------------------------
-        dt = 0.1
-        tmax = 10000
+        tmax = int(round(self.t_max))
 
         N = sc.shape[0]
         # initialization:
@@ -129,30 +126,28 @@ class FICDeco2014(FIC):
         # Doing that gives more stable solutions as the JIs for each node will be
         # a function of the variance.
         currJ = np.ones(N)
-        bestJ = np.ones(N);
-        bestJCount = -1;
+        bestJ = np.ones(N)
+        bestJCount = -1
         bestTrial = -1
         for k in range(5000):  # 5000 trials
-            # integrator.resetBookkeeping()
-            t_max_neuronal = int((tmax + dt))  # (tmax+dt)/dt, but with steps of 1 unit...
             self.model.configure(J=currJ)
             # recompileSignatures()
-            signal = simulate_nodelay(self.model, self.integrator, sc, self.obs_var, self.t_max, self.t_warmup)
+            signal = simulate_nodelay(self.model, self.integrator, sc, "Ie", 1.0, self.t_max, self.t_warmup)
 
             if self.verbose:
                 print(k, end='', flush=True)
 
-            signal_d = signal - self.rest_rate
+            signal_d = signal - (self.model.be / self.model.ae)
             if self.use_N_algorithm:
                 flagJ = self._updateJ_N(N, tmax, delta, signal_d, currJ)  # Nacho's method... ;-)
             else:
-                flagJ = self._updateJ(N, tmax, delta, signal_d, currJ)  # Gus' method, the one from [DecoEtAl2014]
+                flagJ = self._update_J(N, tmax, delta, signal_d, currJ)  # Gus' method, the one from [DecoEtAl2014]
 
             if self.verbose:
                 print("({})".format(flagJ), end='', flush=True)
             if flagJ > bestJCount:
                 bestJCount = flagJ
-                bestJ = currJ
+                bestJ = currJ.copy()
                 bestTrial = k
                 if self.verbose: print(' New min!!!', end='', flush=True)
             if flagJ == N:
@@ -166,6 +161,3 @@ class FICDeco2014(FIC):
         if self.verbose:
             print('DONE!') if flagJ == N else print('FAILED!!!')
         return bestJ
-
-        
-    
