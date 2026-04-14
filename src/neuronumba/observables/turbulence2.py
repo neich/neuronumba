@@ -37,7 +37,7 @@ class Information_transfer(Turbulence):
 
     def _compute_from_fmri(self, bold_signal):
         # bold_signal (ndarray): Bold signal with shape (n_rois, n_time_samples)
-        cc = self.compute_information_transfer(bold_signal)
+        cc = self.compute_information_transfer(bold_signal.T)
         return cc
 
     def compute_information_transfer(self, bold_signal):
@@ -49,10 +49,10 @@ class Information_transfer(Turbulence):
         for i in range(self.NR):
             xrange[i] = delta / 2 + delta * i
 
-        res = super()._compute_from_fmri(bold_signal)
-        entropy = res['enstrophy']
+        res = super()._compute_from_fmri(bold_signal.T)  # use this to prevent infinite recursion calls
+        enstropy = res['enstrophy']
         # Calculate info transfer
-        fclam = np.corrcoef(np.squeeze(entropy))
+        fclam = np.corrcoef(np.squeeze(enstropy))
 
         numind = np.zeros(self.NR)
         fcra = np.zeros(self.NR)
@@ -129,6 +129,20 @@ class Information_cascade(ObservableFMRI):
 
     lambda_values = Attr(default=[0.18], required=False)
     cog_dist = Attr(required=True)
+    # ============ the Information Cascade objects for each lambda
+    turbus = None
+
+    # precompute the Information_transfer classes for each lambda
+    def _init_dependant(self):
+        if self.turbus is not None: return  # if already done... ;-)
+        self.turbus = {}
+        print(f"\nInformation Cascade: initializing turbus for {self.lambda_values}")
+        for lambda_v in self.lambda_values:
+            print(f"    Information Transfer flow for lambda = {lambda_v}")
+            # Define and call the turbulence object
+            Turbu = Information_transfer(cog_dist=self.cog_dist, lambda_val=lambda_v, ignore_nans=True)
+            Turbu.configure()
+            self.turbus[lambda_v] = Turbu
 
     def _compute_from_fmri(self, bold_signal):
         # bold_signal (ndarray): Bold signal with shape (n_rois, n_time_samples)
@@ -138,19 +152,17 @@ class Information_cascade(ObservableFMRI):
     def compute_information_cascade(self, bold_signal):
         turbuRes = {}
         for lambda_v in self.lambda_values:
-            # Define and call the turbulence object
-            Turbu = Information_transfer(cog_dist=self.cog_dist, lambda_val=lambda_v, ignore_nans=True)
-            Turbu.configure()
-            turbuRes[lambda_v] = Turbu.from_fmri(bold_signal)
-        entropys = {lambda_v: turbuRes[lambda_v]['enstrophy'] for lambda_v in self.lambda_values}
+            turbu = self.turbus[lambda_v]
+            turbuRes[lambda_v] = turbu.from_fmri(bold_signal)
+        enstropys = {lambda_v: turbuRes[lambda_v]['enstrophy'] for lambda_v in self.lambda_values}
         # Calculate info cascade flow and info cascade
         len_lambdas = len(self.lambda_values)
         TransferLambda = np.zeros(len_lambdas)
         for lambda_pos in range(len_lambdas-1):
             lambda_v = self.lambda_values[lambda_pos]
             lambda_v_next = self.lambda_values[lambda_pos+1]
-            cc, pp = matlab_tricks.corr2(np.squeeze(entropys[lambda_v_next][:, 1:]).T,
-                                         np.squeeze(entropys[lambda_v][:, :-1]).T)
+            cc, pp = matlab_tricks.corr2(np.squeeze(enstropys[lambda_v_next][:, 1:]).T,
+                                         np.squeeze(enstropys[lambda_v][:, :-1]).T)
             TransferLambda[lambda_pos+1] = np.nanmean(np.abs(cc[pp < 0.05]))  # info flow
         InformationCascade = np.nanmean(TransferLambda[1:len_lambdas],axis=0)  # info cascade
         turbus = {f'{attrib}-{lambda_v}': turbuRes[lambda_v][attrib]
