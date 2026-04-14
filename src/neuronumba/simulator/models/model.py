@@ -270,9 +270,7 @@ class LinearCouplingModel(Model):
                                     contains only the variables to couple
             :return:
             """
-            # r = state @ wtg
-            clipped_state = np.minimum(np.maximum(state, 0.0), 1.0)
-            r = clipped_state @ wtg
+            r = state @ wtg
             return r
 
         return linear_coupling
