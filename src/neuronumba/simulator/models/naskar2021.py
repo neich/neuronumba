@@ -43,6 +43,7 @@ class Naskar2021(LinearCouplingModel):
     _state_var_names = ['S_e', 'S_i', 'J']
     _coupling_var_names = ['S_e']
     _observable_var_names = ['Ie', 're']
+    _state_var_bounds = {'S_e': (0.0, 1.0), 'S_i': (0.0, 1.0)}
 
     t_glu = Attr(default=7.46, attributes=Model.Tag.REGIONAL)    # concentration of glutamate
     t_gaba = Attr(default=1.82, attributes=Model.Tag.REGIONAL)   # concentration of GABA
@@ -82,8 +83,8 @@ class Naskar2021(LinearCouplingModel):
         @nb.njit(nb.types.UniTuple(nb.f8[:, :], 2)(nb.f8[:, :], nb.f8[:, :]),
                  cache=NUMBA_CACHE)
         def Naskar2021_dfun(state, coupling):                
-            Se = np.clip(state[0, :], 0.0, 1.0)
-            Si = np.clip(state[1, :], 0.0, 1.0)
+            Se = state[0, :]
+            Si = state[1, :]
             J = state[2, :]
 
             # Eq for I^E (5). I_external = 0 => resting state condition.
