@@ -53,6 +53,10 @@ class Model(HasAttr, ABC):
     Example: ['Ie', 're'] for excitatory current and firing rate.
     """
 
+    _state_var_bounds: dict = {}
+    """Optional bounds per state variable name: {name: (lo, hi)}.
+    Variables not listed are unbounded. Use math.inf / -math.inf for one-sided bounds."""
+
     # ---------------------------------------------------------------
     # Derived class attributes (auto-computed by __init_subclass__)
     # ---------------------------------------------------------------
@@ -74,6 +78,10 @@ class Model(HasAttr, ABC):
     n_observable_vars: int = 0
     """Number of observable variables. Auto-computed from _observable_var_names."""
 
+    _state_var_lo: np.ndarray = np.empty(0)
+    _state_var_hi: np.ndarray = np.empty(0)
+    _has_bounds: bool = False
+
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         # Only process subclasses that declare their own _state_var_names
@@ -86,6 +94,20 @@ class Model(HasAttr, ABC):
         if '_coupling_var_names' in cls.__dict__:
             # Resolve names to integer indices using state_vars
             cls.c_vars = [cls.state_vars[name] for name in cls._coupling_var_names]
+        if '_state_var_names' in cls.__dict__ or '_state_var_bounds' in cls.__dict__:
+            n = cls.n_state_vars
+            lo = np.full(n, -np.inf, dtype=np.float64)
+            hi = np.full(n, np.inf, dtype=np.float64)
+            bounds = cls._state_var_bounds or {}
+            for name, (b_lo, b_hi) in bounds.items():
+                if name not in cls.state_vars:
+                    raise ValueError(f"Bound declared for unknown state var <{name}> in {cls.__name__}")
+                idx = cls.state_vars[name]
+                lo[idx] = b_lo
+                hi[idx] = b_hi
+            cls._state_var_lo = lo
+            cls._state_var_hi = hi
+            cls._has_bounds = bool(bounds)
 
     def configure(self, **kwargs):
         self.P, self.P_aux = type(self)._build_parameter_enum()
@@ -147,6 +169,40 @@ class Model(HasAttr, ABC):
         - state_coupled: shape (len(c_vars), n_rois)
         - coupling:      shape (len(c_vars), n_rois)
         """
+
+    def get_numba_validate(self):
+        """Return a @nb.njit function that clips state to declared bounds in place.
+
+        Signature: f8[:,:](f8[:,:])  (state) -> state
+        If the model declares no bounds, returns an identity closure.
+        """
+        if not self._has_bounds:
+            @nb.njit(nb.f8[:, :](nb.f8[:, :]), cache=NUMBA_CACHE)
+            def validate(state):
+                return state
+            return validate
+
+        lo = self._state_var_lo
+        hi = self._state_var_hi
+        bounded_idx = np.array(
+            [i for i in range(lo.shape[0])
+             if np.isfinite(lo[i]) or np.isfinite(hi[i])],
+            dtype=np.int64,
+        )
+
+        @nb.njit(nb.f8[:, :](nb.f8[:, :]), cache=NUMBA_CACHE, fastmath=NUMBA_FASTMATH)
+        def validate(state):
+            n = bounded_idx.shape[0]
+            n_rois = state.shape[1]
+            for k in range(n):
+                i = bounded_idx[k]
+                lo_i = lo[i]
+                hi_i = hi[i]
+                for j in range(n_rois):
+                    state[i, j] = min(hi_i, max(lo_i, state[i, j]))
+            return state
+
+        return validate
 
     def get_jacobian(self, sc):
         """

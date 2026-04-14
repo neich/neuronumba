@@ -64,6 +64,7 @@ class Deco2014(LinearCouplingModel):
     _state_var_names = ['S_e', 'S_i']
     _coupling_var_names = ['S_e']
     _observable_var_names = ['Ie', 're']
+    _state_var_bounds = {'S_e': (0.0, 1.0), 'S_i': (0.0, 1.0)}
 
     # ==========================================================================
     # Model Parameters
@@ -203,9 +204,8 @@ class Deco2014(LinearCouplingModel):
             gamma_e = m[np.intp(P.gamma_e)]
             gamma_i = m[np.intp(P.gamma_i)]
             
-            # Clamping synaptic gating variables to [0,1] range
-            Se = state[0, :].clip(ZERO, ONE)
-            Si = state[1, :].clip(ZERO, ONE)
+            Se = state[0, :]
+            Si = state[1, :]
 
             # Compute excitatory current I^E (Equation 5 in Deco et al. 2014)
             # I_e = J_ext_e * I_0 + w * J_NMDA * S_e + J_NMDA * coupling - J * S_i + I_external

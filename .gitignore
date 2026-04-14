@@ -6,6 +6,7 @@ examples/tests/
 **.txt
 **.pdf
 CLAUDE.md
+.gaviero
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
