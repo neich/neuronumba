@@ -22,6 +22,7 @@ class Deco2018(LinearCouplingModel):
     _state_var_names = ['S_e', 'S_i']
     _coupling_var_names = ['S_e']
     _observable_var_names = ['Ie', 're']
+    _state_var_bounds = {'S_e': (0.0, 1.0), 'S_i': (0.0, 1.0)}
 
     auto_fic = Attr(default=True)
     taon = Attr(default=100.0, attributes=Model.Tag.REGIONAL)
@@ -64,9 +65,8 @@ class Deco2018(LinearCouplingModel):
 
         @nb.njit(nb.types.UniTuple(nb.f8[:, :], 2)(nb.f8[:, :], nb.f8[:, :]))
         def Deco2018_dfun(state: NDA_f8_2d, coupling: NDA_f8_2d):
-            # Clamping, needed in Deco2018 model and derivatives...
-            Se = state[0, :].clip(0.0,1.0)
-            Si = state[1, :].clip(0.0,1.0)
+            Se = state[0, :]
+            Si = state[1, :]
 
             # Eq for I^E (5). I_external = 0 => resting state condition.
             Ie = m[np.intp(P.Jext_e)] * m[np.intp(P.I0)] + m[np.intp(P.w)] * m[np.intp(P.J_NMDA)] * Se + m[np.intp(P.J_NMDA)] * coupling[0, :] - m[np.intp(P.J)] * Si + m[np.intp(P.I_external)]
