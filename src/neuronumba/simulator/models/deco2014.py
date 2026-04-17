@@ -71,7 +71,7 @@ class Deco2014(LinearCouplingModel):
     # ==========================================================================
     
     # Automatic FIC computation
-    auto_fic = Attr(default=True, attributes=Model.Tag.GLOBAL,
+    auto_fic = Attr(default=True,
                    doc="Whether to automatically compute inhibitory coupling strength J using FIC")
     
     # Time constants (ms)
@@ -123,7 +123,7 @@ class Deco2014(LinearCouplingModel):
                      doc="Additional external current input (nA)")
     
     # Steady state computation options
-    recompute_steady_state = Attr(default=False, attributes=Model.Tag.GLOBAL,
+    recompute_steady_state = Attr(default=False,
                                  doc="Whether to recompute steady state values")
 
     # ==========================================================================
