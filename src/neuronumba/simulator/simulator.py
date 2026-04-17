@@ -51,6 +51,7 @@ class Simulator(HasAttr):
         h_update = self.history.get_numba_update()
         h_sample = self.history.get_numba_sample()
         i_scheme = self.integrator.get_numba_scheme(self.model.get_numba_dfun())
+        m_validate = self.model.get_numba_validate()
         # TODO: allow more than 1 monitor? Is really useful?
         m_sample = self.monitors[0].get_numba_sample()
 
@@ -62,6 +63,7 @@ class Simulator(HasAttr):
                 previous_state_coupled = h_sample(step)
                 cpl = m_couple(previous_state_coupled)
                 new_state, new_observed = i_scheme(state, cpl)
+                new_state = m_validate(new_state)
                 h_update(step, new_state)
                 m_sample(step-1, new_state, new_observed)
                 state = new_state
