@@ -210,6 +210,10 @@ class Model(HasAttr, ABC):
         """
         raise NotImplementedError
 
+    @abstractmethod
+    def get_noise_template(self):
+        """Return a noise template."""
+
     def get_noise_matrix(self, sigma, N):
         """Compute the covariance noise matrix of the model.
 

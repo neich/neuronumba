@@ -102,3 +102,8 @@ class Naskar2021(LinearCouplingModel):
             return np.stack((dSe, dSi, dJ)), np.stack((Ie, re))
 
         return Naskar2021_dfun
+
+    def get_noise_template(self):
+        #           ['S_e', 'S_i', 'J']
+        return np.r_[   1.,    1.,  0.]
+

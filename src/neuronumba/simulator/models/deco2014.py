@@ -320,6 +320,10 @@ class Deco2014(LinearCouplingModel):
 
         return Ie_ss, Ii_ss, re_ss, ri_ss, Se_ss, Si_ss, J
 
+    def get_noise_template(self):
+        #           ['S_e', 'S_i']
+        return np.r_[   1.,    1.]
+
     def get_jacobian(self, SC: np.ndarray) -> np.ndarray:
         """
         Compute the analytical Jacobian of the DMF model.

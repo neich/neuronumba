@@ -125,6 +125,10 @@ class Hopf(Model):
 
         return Hopf_dfun
 
+    def get_noise_template(self):
+        #           ['x', 'y']
+        return np.r_[ 1.,  1.]
+
     def get_jacobian(self, sc):
         """
         This function computes the Jacobian of the linearised Hopf model.

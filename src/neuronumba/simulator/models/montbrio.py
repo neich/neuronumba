@@ -158,3 +158,8 @@ class Montbrio(LinearCouplingModel):
             return np.stack((d_r_e, d_r_i, d_u_e, d_u_i, d_S_ee, d_S_ie)), np.empty((1, 1))
 
         return Montbrio_dfun
+
+    def get_noise_template(self):
+        #           ['r_e', 'r_i', 'u_e', 'u_i', 'S_ee', 'S_ie']
+        return np.r_[ 0.0,    0.0,   0.0,   0.0,     1.,     1.]
+
