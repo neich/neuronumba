@@ -6,10 +6,14 @@ hand-written counterpart in `src/neuronumba/simulator/models/`.
 
 | Spec | Hand-written | LOC ratio |
 |---|---|---|
-| [hopf_dsl.py](hopf_dsl.py) | `hopf.py` | ~30 vs 152 |
-| [deco2014_dsl.py](deco2014_dsl.py) | `deco2014.py` | ~50 vs 416 |
-| [naskar2021_dsl.py](naskar2021_dsl.py) | `naskar2021.py` | ~60 vs 104 |
-| [montbrio_dsl.py](montbrio_dsl.py) | `montbrio.py` | ~70 vs 160 |
+| [hopf_dsl.py](hopf_dsl.py) | `hopf.py` | 38 vs 152 |
+| [deco2014_dsl.py](deco2014_dsl.py) | `deco2014.py` | 67 vs 416 |
+| [naskar2021_dsl.py](naskar2021_dsl.py) | `naskar2021.py` | 69 vs 104 |
+| [montbrio_dsl.py](montbrio_dsl.py) | `montbrio.py` | 88 vs 160 |
+
+There is also [compare_simulations.py](compare_simulations.py): a runnable
+script that simulates pairs of DSL and hand-written models on the same inputs
+and plots their trajectories side-by-side.
 
 ## Dual purpose
 
@@ -31,15 +35,16 @@ If you change a DSL spec (e.g. for a new feature you want to add), the
 equivalence test still has to pass against the hand-written reference. If they
 genuinely diverge, that's a model change and belongs in a separate PR.
 
-## Models not included
+## Models not yet ported
 
-- **Zerlaut** — needs `@njit` helper subroutines (`get_fluct_regime_vars`,
-  `threshold_func`, `erfc_approx`). The DSL doesn't support that yet — see the
-  Phase 6 deferred items in `IMPLEMENTATION_PLAN.md`.
-- **OrnsteinUhlenbeck** — needs non-scalar matrix parameters (`A` derived from
-  weights/g/tau). Deferred to v0.2.
+- **Zerlaut** (`zerlaut.py`, ~800 LOC) — uses several `@njit` helper subroutines
+  (`get_fluct_regime_vars`, `threshold_func`, `erfc_approx`). The DSL now
+  supports user-supplied helpers via `helpers=[...]`, so a port is feasible;
+  it just hasn't been written yet.
 
-For these, subclass `Model` directly.
+The DSL can also express models with non-scalar matrix parameters and
+conduction-delay coupling — see `tests/test_dsl_matrix_params.py` and
+`tests/test_dsl_delayed.py` for the relevant patterns.
 
 ## Usage
 
@@ -51,4 +56,20 @@ from examples.dsl_models.hopf_dsl import hopf_spec
 HopfDSL = build_model(hopf_spec)
 
 m = HopfDSL(g=0.5).configure(weights=W)
+```
+
+For incremental construction (instead of writing a full `ModelSpec` literal),
+use `ModelBuilder`:
+
+```python
+from neuronumba.simulator.models.dsl import ModelBuilder
+
+HopfDSL = (ModelBuilder("Hopf")
+    .add_state("x").add_state("y")
+    .add_coupling("x", kind="diffusive")
+    .add_param("a", default=-0.5)
+    .add_param("omega", default=0.3)
+    .add_equation("d_x = (a - x*x - y*y)*x - omega*y + coupling.x")
+    .add_equation("d_y = (a - x*x - y*y)*y + omega*x")
+    .build())
 ```
