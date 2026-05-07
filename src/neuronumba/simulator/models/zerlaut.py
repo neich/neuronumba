@@ -346,13 +346,19 @@ class ZerlautAdaptationFirstOrder(LinearCouplingModel):
         m_aux = self.m_aux.copy()
         P = self.P
         P_aux = self.P_aux
+        # Hoist m_aux access into the factory: m_aux is a numba typed Dict and
+        # cannot be lowered as a freevar inside the JIT'd dfun. P_e/P_i are
+        # plain ndarrays and capture cleanly via closure (this matches what
+        # ZerlautAdaptationSecondOrder.get_numba_dfun does).
+        P_e = m_aux[np.intp(P_aux.P_e)]
+        P_i = m_aux[np.intp(P_aux.P_i)]
 
         @nb.njit(cache=NUMBA_CACHE, fastmath=NUMBA_FASTMATH, nogil=NUMBA_NOGIL)
         def ZerlautAdaptationFirstOrder_dfun(state: NDA_f8_2d, coupling: NDA_f8_2d):
             """
             Numba-compiled function to compute the derivatives of the state variables
             and observables for the Zerlaut adaptation first order model.
-            
+
             :param state: 2D array of state variables (shape: n_state_vars x n_nodes)
             :param coupling: 2D array of coupling values (shape: n_coupling_vars x n_nodes)
             :return: 2D array of derivatives (shape: n_state_vars x n_nodes)
@@ -362,7 +368,7 @@ class ZerlautAdaptationFirstOrder(LinearCouplingModel):
             inv_T = 1.0 / T_val
             weight_noise_val = m[np.intp(P.weight_noise)]
             K_ext_e_val = m[np.intp(P.K_ext_e)]
-            
+
             # Precompute adaptation parameters
             tau_w_e_val = m[np.intp(P.tau_w_e)]
             tau_w_i_val = m[np.intp(P.tau_w_i)]
@@ -372,10 +378,8 @@ class ZerlautAdaptationFirstOrder(LinearCouplingModel):
             a_i_val = m[np.intp(P.a_i)]
             E_L_e_val = m[np.intp(P.E_L_e)]
             E_L_i_val = m[np.intp(P.E_L_i)]
-            
-            # Precompute TF parameters
-            P_e = m_aux[np.intp(P_aux.P_e)]
-            P_i = m_aux[np.intp(P_aux.P_i)]
+
+            # Precompute TF parameters (P_e, P_i closed over from factory)
             Q_e_val = m[np.intp(P.Q_e)]
             tau_e_val = m[np.intp(P.tau_e)]
             E_e_val = m[np.intp(P.E_e)]
@@ -452,6 +456,8 @@ class ZerlautAdaptationFirstOrder(LinearCouplingModel):
             dod = -ou_drift / m[np.intp(P.tau_OU)]
 
             return np.stack((dE, dI, dWe, dWi, dod)), np.empty((1,1))
+
+        return ZerlautAdaptationFirstOrder_dfun
 
 
 
