@@ -24,10 +24,14 @@ from dsl_models import (  # noqa: E402
     deco_spec as _deco_spec,
     naskar_spec as _naskar_spec,
     montbrio_spec as _montbrio_spec,
+    zerlaut_first_order_spec as _zerlaut_1o_spec,
+    zerlaut_second_order_spec as _zerlaut_2o_spec,
     HopfDSL as _HopfDSL,
     Deco2014DSL as _Deco2014DSL,
     Naskar2021DSL as _Naskar2021DSL,
     MontbrioDSL as _MontbrioDSL,
+    ZerlautAdaptationFirstOrderDSL as _ZerlautAdaptationFirstOrderDSL,
+    ZerlautAdaptationSecondOrderDSL as _ZerlautAdaptationSecondOrderDSL,
 )
 
 
@@ -73,6 +77,16 @@ def montbrio_spec():
     return _montbrio_spec
 
 
+@pytest.fixture(scope="session")
+def zerlaut_1o_spec():
+    return _zerlaut_1o_spec
+
+
+@pytest.fixture(scope="session")
+def zerlaut_2o_spec():
+    return _zerlaut_2o_spec
+
+
 # ----- materialized model classes --------------------------------------------
 # Re-export the built classes from `examples/dsl_models/` directly. Tests
 # exercise the exact same class objects a user would import.
@@ -95,3 +109,13 @@ def naskar_dsl_cls():
 @pytest.fixture(scope="session")
 def montbrio_dsl_cls():
     return _MontbrioDSL
+
+
+@pytest.fixture(scope="session")
+def zerlaut_1o_dsl_cls():
+    return _ZerlautAdaptationFirstOrderDSL
+
+
+@pytest.fixture(scope="session")
+def zerlaut_2o_dsl_cls():
+    return _ZerlautAdaptationSecondOrderDSL
