@@ -1,15 +1,16 @@
 """
 AST rewriter for DSL equation bodies.
 
-Transforms identifiers in user-supplied equations to the
-`m[np.intp(P.x)]` / `state[i, :]` / `coupling[k, :]` form used by the
-hand-written neuronumba dfuns, and validates that every identifier is
-declared (state var, parameter, intermediate, or whitelisted numpy func).
+Transforms identifiers in user-supplied equations and validates that every
+identifier is declared (state var, parameter, intermediate, helper, or
+whitelisted numpy func). State vars and coupling refs get rewritten to
+indexed access; everything else is left as-is and bound at the factory
+level via `model.<name>` closure capture.
 """
 from __future__ import annotations
 
 import ast
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 
 # Numpy functions allowed inside dfun bodies. Using a whitelist is the cheapest
@@ -32,14 +33,17 @@ class _DfunRewriter(ast.NodeTransformer):
         coupling_index: Dict[str, int],
         param_names: set,
         observable_names: set,
+        helper_names: Optional[set] = None,
     ):
         self.state_index = state_index
         self.coupling_index = coupling_index
         self.param_names = param_names
         self.observable_names = observable_names
+        self.helper_names = helper_names or set()
         self.intermediates: set = set()       # names introduced by user assignments
         self.used_state: set = set()
         self.used_params: set = set()
+        self.used_helpers: set = set()
         self.errors: List[str] = []
 
     # --- assignment LHS handling ------------------------------------------
@@ -74,24 +78,29 @@ class _DfunRewriter(ast.NodeTransformer):
             return node
 
         if n in self.param_names:
-            # Don't rewrite parameters. They get bound as locals at the top of
-            # the generated function (e.g. `tau_e = m[np.intp(P.tau_e)]`).
+            # Parameters get bound at factory level via `model.<name>` closure
+            # capture; we don't rewrite the AST node.
             self.used_params.add(n)
             return node
 
         # Allowed: intermediates introduced earlier, observables, the special
-        # tokens 'state', 'coupling', 'm', 'P', 'np', and known numpy functions.
+        # tokens 'state', 'coupling', 'model', 'np', known numpy functions,
+        # and user-supplied helper functions.
         if n in self.intermediates:
             return node
-        if n in {"state", "coupling", "m", "P", "np"}:
+        if n in {"state", "coupling", "model", "np"}:
             return node
         if n in ALLOWED_NP_FUNCS:
+            return node
+        if n in self.helper_names:
+            self.used_helpers.add(n)
             return node
 
         # Anything else is an undeclared identifier — error.
         self.errors.append(
             f"Line {node.lineno}: unknown identifier '{n}'. "
-            f"Not a state var, parameter, intermediate, or allowed numpy func."
+            f"Not a state var, parameter, intermediate, helper, or allowed "
+            f"numpy func."
         )
         return node
 
