@@ -6,7 +6,10 @@ For each canonical model we compare:
 """
 import numpy as np
 
-from neuronumba.simulator.models import Hopf, Deco2014, Naskar2021, Montbrio
+from neuronumba.simulator.models import (
+    Hopf, Deco2014, Naskar2021, Montbrio,
+    ZerlautAdaptationFirstOrder, ZerlautAdaptationSecondOrder,
+)
 
 
 def _compare_dfun(m_ref, m_dsl, n_rois, rng, atol=1e-12):
@@ -66,3 +69,25 @@ def test_equivalence_montbrio(weights, n_rois, montbrio_dsl_cls):
     m_dsl = montbrio_dsl_cls(g=0.5).configure(weights=weights)
     _compare_coupling(m_ref, m_dsl, n_rois, rng)
     _compare_dfun(m_ref, m_dsl, n_rois, rng, atol=1e-10)
+
+
+def test_equivalence_zerlaut_first_order(weights, n_rois, zerlaut_1o_dsl_cls):
+    rng = np.random.default_rng(42)
+    m_ref = ZerlautAdaptationFirstOrder(g=0.5).configure(weights=weights)
+    m_dsl = zerlaut_1o_dsl_cls(g=0.5).configure(weights=weights)
+    _compare_coupling(m_ref, m_dsl, n_rois, rng)
+    _compare_dfun(m_ref, m_dsl, n_rois, rng)
+
+
+def test_equivalence_zerlaut_second_order(weights, n_rois, zerlaut_2o_dsl_cls):
+    rng = np.random.default_rng(42)
+    m_ref = ZerlautAdaptationSecondOrder(g=0.5).configure(weights=weights)
+    m_dsl = zerlaut_2o_dsl_cls(g=0.5).configure(weights=weights)
+    _compare_coupling(m_ref, m_dsl, n_rois, rng)
+    # 2nd-order's 12 chained TF calls + finite-diff derivatives sit at the FP
+    # noise floor (~1e-12 absolute on dE/dI). The hand-written code keeps
+    # inv_T as a 1D array (slice of `self.m`), while the DSL closes over it
+    # as a scalar; numba's fastmath emits slightly different FMA sequences
+    # for `arr * scalar` vs `arr * arr-of-constants`, so the lowest ~1 ulp
+    # diverges per FLOP. 1e-11 covers that without hiding real bugs.
+    _compare_dfun(m_ref, m_dsl, n_rois, rng, atol=1e-11)
