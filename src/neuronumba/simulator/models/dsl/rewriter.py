@@ -48,22 +48,45 @@ class _DfunRewriter(ast.NodeTransformer):
 
     # --- assignment LHS handling ------------------------------------------
     def visit_Assign(self, node: ast.Assign):
-        # Targets: only simple names allowed (e.g. `Ie = ...` or `dSe = ...`).
-        if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
+        # Single-target assigns: either `name = ...` (intermediate / derivative)
+        # or `a, b, c = helper(...)` (tuple-unpacking from a multi-return helper).
+        # Chained assignment (`a = b = ...`) and starred unpacking are rejected.
+        if len(node.targets) != 1:
             self.errors.append(
-                f"Line {node.lineno}: only single-name assignments are supported"
+                f"Line {node.lineno}: only single-target assignments are supported"
             )
             return node
 
-        target = node.targets[0].id
-        # If the target is `d_<state>`, mark it as a derivative (no rewriting needed —
-        # we collect derivatives at emit time and assemble the return value ourselves).
-        # Anything else is an intermediate (or an observable).
-        if not (
-            target.startswith("d_")
-            and target[2:] in self.state_index
-        ):
-            self.intermediates.add(target)
+        tgt = node.targets[0]
+        if isinstance(tgt, ast.Name):
+            target = tgt.id
+            # If the target is `d_<state>`, mark it as a derivative (no rewriting
+            # needed — we collect derivatives at emit time). Anything else is an
+            # intermediate (or an observable).
+            if not (
+                target.startswith("d_")
+                and target[2:] in self.state_index
+            ):
+                self.intermediates.add(target)
+        elif isinstance(tgt, ast.Tuple):
+            # `mu_V, sigma_V, T_V = get_fluct_regime_vars(...)` — every name in
+            # the tuple becomes an intermediate. Nested tuples and starred
+            # targets are rejected for simplicity.
+            for elt in tgt.elts:
+                if not isinstance(elt, ast.Name):
+                    self.errors.append(
+                        f"Line {node.lineno}: tuple-unpacking targets must be "
+                        f"plain names; got {ast.dump(elt)}"
+                    )
+                    return node
+                self.intermediates.add(elt.id)
+        else:
+            self.errors.append(
+                f"Line {node.lineno}: assignment target must be a name or a "
+                f"tuple of names; got {type(tgt).__name__}"
+            )
+            return node
+
         # Recurse into the RHS only.
         node.value = self.visit(node.value)
         return node
