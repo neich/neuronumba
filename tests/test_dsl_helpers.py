@@ -140,3 +140,97 @@ def test_helpers_not_listed_for_specs_without_them():
     f = m.get_numba_dfun()
     ds, _ = f(np.array([[0.5, 1.0, -0.5, 2.0]]), np.zeros((1, 4)))
     np.testing.assert_allclose(ds[0], -np.array([0.5, 1.0, -0.5, 2.0]), atol=1e-12)
+
+
+# --- tuple-unpacking from helpers (Zerlaut-class enabler) ------------------
+
+@nb.njit(nb.types.UniTuple(nb.f8[:], 3)(nb.f8[:]), cache=False)
+def split3(x):
+    """Returns three arrays derived from x — exercises tuple unpacking."""
+    return x, 2.0 * x, x * x
+
+
+def test_helper_tuple_unpacking():
+    """A helper returning a tuple should unpack into multiple intermediates."""
+    spec = ModelSpec(
+        name="TupleUnpack",
+        state_vars=[StateVar("x", initial=0.0)],
+        coupling_vars=[CouplingVar("x", kind="linear")],
+        observables=[],
+        parameters=[Parameter("a", default=1.0)],
+        equations="""
+            u, v, w = split3(x)
+            d_x = -a * (u + v + w) + coupling.x
+        """,
+        helpers=[split3],
+    )
+    Cls = build_model(spec)
+    n = 4
+    m = Cls(g=0.0).configure(weights=np.zeros((n, n)))
+    f = m.get_numba_dfun()
+    state = np.array([[0.5, 1.0, -0.5, 2.0]])
+    ds, _ = f(state, np.zeros((1, n)))
+    # u + v + w = x + 2x + x^2 = 3x + x^2; d_x = -1 * (3x + x^2)
+    expected = -1.0 * (3.0 * state[0] + state[0] ** 2)
+    np.testing.assert_allclose(ds[0], expected, atol=1e-12)
+
+
+def test_helper_tuple_unpacking_targets_become_intermediates():
+    """Names introduced via tuple-unpacking should be usable in subsequent equations."""
+    spec = ModelSpec(
+        name="TupleUnpackChain",
+        state_vars=[StateVar("x", initial=0.0)],
+        coupling_vars=[CouplingVar("x", kind="linear")],
+        observables=[],
+        parameters=[Parameter("a", default=2.0)],
+        equations="""
+            u, v, w = split3(x)
+            combined = u * v + w
+            d_x = -a * combined + coupling.x
+        """,
+        helpers=[split3],
+    )
+    Cls = build_model(spec)
+    n = 3
+    m = Cls(g=0.0).configure(weights=np.zeros((n, n)))
+    f = m.get_numba_dfun()
+    state = np.array([[0.1, 0.5, -0.3]])
+    ds, _ = f(state, np.zeros((1, n)))
+    # combined = x * 2x + x^2 = 3 x^2; d_x = -2 * 3 x^2 = -6 x^2
+    expected = -6.0 * state[0] ** 2
+    np.testing.assert_allclose(ds[0], expected, atol=1e-12)
+
+
+def test_helper_tuple_unpacking_chained_assignment_rejected():
+    """`a = b = expr` is not supported (multiple targets)."""
+    spec = ModelSpec(
+        name="ChainBad",
+        state_vars=[StateVar("x", initial=0.0)],
+        coupling_vars=[CouplingVar("x", kind="linear")],
+        observables=[],
+        parameters=[Parameter("a", default=1.0)],
+        equations="""
+            u = v = a * x
+            d_x = -u + coupling.x
+        """,
+    )
+    with pytest.raises(ValueError, match="single-target"):
+        build_model(spec)
+
+
+def test_helper_tuple_unpacking_starred_target_rejected():
+    """Starred targets (`a, *b = ...`) are not supported."""
+    spec = ModelSpec(
+        name="StarBad",
+        state_vars=[StateVar("x", initial=0.0)],
+        coupling_vars=[CouplingVar("x", kind="linear")],
+        observables=[],
+        parameters=[Parameter("a", default=1.0)],
+        equations="""
+            u, *rest = split3(x)
+            d_x = -a * u + coupling.x
+        """,
+        helpers=[split3],
+    )
+    with pytest.raises(ValueError, match="tuple-unpacking targets must be"):
+        build_model(spec)
