@@ -14,6 +14,15 @@ from .rewriter import ALLOWED_NP_FUNCS
 from .spec import ModelSpec, Parameter
 
 
+# Model-context attributes available inside dependent-param formulas. These
+# are real attributes on the configured model instance (set by
+# `LinearCouplingModel._init_dependant` before our hook runs); we expose
+# them by name so formulas can reference e.g. `g * weights` or
+# `np.eye(n_rois)`. They're allowed in formulas but do NOT create
+# parameter-graph dependencies (they aren't declared params).
+MODEL_CONTEXT_NAMES = frozenset({"weights", "weights_t", "g", "n_rois"})
+
+
 def _formula_deps(name: str, src: str, allowed: set) -> List[str]:
     """Return the parameter names referenced in `src`. Validate identifiers."""
     try:
@@ -31,11 +40,14 @@ def _formula_deps(name: str, src: str, allowed: set) -> List[str]:
                 return
             if n in ALLOWED_NP_FUNCS:
                 return
+            if n in MODEL_CONTEXT_NAMES:
+                # Allowed but doesn't create a param-graph dependency.
+                return
             if n not in allowed:
                 raise ValueError(
                     f"Parameter '{name}': formula references unknown identifier "
                     f"'{n}' (line {node.lineno}). Must be another declared "
-                    f"parameter or numpy."
+                    f"parameter, numpy, or one of {sorted(MODEL_CONTEXT_NAMES)}."
                 )
             if n not in seen:
                 deps.append(n)
