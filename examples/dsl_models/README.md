@@ -36,24 +36,28 @@ If you change a DSL spec (e.g. for a new feature you want to add), the
 equivalence test still has to pass against the hand-written reference. If they
 genuinely diverge, that's a model change and belongs in a separate PR.
 
-## DSL feature coverage
+## What each spec illustrates
 
-All neuronumba models in `src/neuronumba/simulator/models/` are now expressed
-in the DSL. The Zerlaut port additionally exercised:
+Pick the spec that's closest to what you want to build:
 
-- Tuple-unpacking from a multi-return helper (`mu_V, sigma_V, T_V =
-  get_fluct_regime_vars(...)`).
-- Long argument lists (TF takes 21 positional arguments — the DSL just
-  transcribes them; numba treats this exactly the same as the hand-written
-  code).
-- Helpers that compose other helpers (`TF` calls `get_fluct_regime_vars`
-  and `threshold_func` and `erfc_approx`).
-- 1D-array parameters as defaults (`P_e`, `P_i` are length-10 polynomial
-  coefficients).
+- **`hopf_dsl.py`** — minimal 2-variable oscillator. Shows the basic shape
+  of `state_vars` / `coupling_vars` / `parameters` / `equations` and the
+  `kind="diffusive"` coupling kernel.
+- **`deco2014_dsl.py`** — single-coupling-var rate model with declared
+  observables (`Ie`, `re`) and an EPS-fix using `np.where` in the equations.
+- **`naskar2021_dsl.py`** — extends Deco-style dynamics with a third state
+  variable that itself follows a slow plasticity rule.
+- **`montbrio_dsl.py`** — 6-variable Montbrio model with cross-coupling and
+  recurrent dependent parameters (`Parameter("J_N_ee", formula="...")`).
+- **`zerlaut_dsl.py`** — uses user-supplied `@nb.njit` helpers
+  (`get_fluct_regime_vars`, `threshold_func`, `TF`, `erfc_approx`) imported
+  from `neuronumba.simulator.models.zerlaut`. Demonstrates tuple-unpacking
+  from a multi-return helper, helper composition (`TF` calls the others
+  internally), and 1D-array parameters as defaults (length-10 polynomial
+  coefficient vectors).
 
-The DSL can also express models with non-scalar matrix parameters and
-conduction-delay coupling — see `tests/test_dsl_matrix_params.py` and
-`tests/test_dsl_delayed.py`.
+For matrix-valued parameters and conduction-delay coupling, see
+`tests/test_dsl_matrix_params.py` and `tests/test_dsl_delayed.py`.
 
 ## Usage
 
