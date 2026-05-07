@@ -32,7 +32,6 @@ def test_dependents_simple_chain():
     n = 4
     m = Cls(g=0.0).configure(weights=np.zeros((n, n)))
     assert np.allclose(m.c, 5.0)
-    assert np.allclose(m.m[int(m.P.c)], 5.0)
 
 
 def test_dependents_multilevel_topo_sort():
@@ -115,4 +114,8 @@ def test_dependents_recompute_on_configure():
     m.a = 5.0
     m.configure(weights=W)
     assert np.allclose(m.b, 50.0)
-    assert np.allclose(m.m[int(m.P.b)], 50.0)
+    # Verify the dfun sees the updated dependent: -x / b at b=50, x=1 → -0.02.
+    f = m.get_numba_dfun()
+    state = np.ones((1, n))
+    ds, _ = f(state, np.zeros((1, n)))
+    np.testing.assert_allclose(ds[0], -1.0 / 50.0, atol=1e-12)
