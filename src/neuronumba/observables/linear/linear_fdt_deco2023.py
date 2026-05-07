@@ -18,11 +18,13 @@ from neuronumba.observables.linear.linearfc import LinearFC
 class LinearFdtDeco2023(Observable):
     A = Attr(default=None)
     Qn = Attr(default=None)
+    Vars = Attr(default=2)  # 2 to keep backwards compatibility
     sigma = Attr(default=0.01)
 
-    def from_matrix(self, A, Qn):
+    def from_matrix(self, A, Qn, Vars=2):  # 2 to keep backwards compatibility
         self.A = A
         self.Qn = Qn
+        self.Vars = Vars
 
         return self.compute()
 
@@ -33,9 +35,8 @@ class LinearFdtDeco2023(Observable):
         if self.Qn is None or not (isinstance(self.Qn, np.ndarray) and self.Qn.ndim == 2):
             raise TypeError("Invalid attribute Qn")
         
-        n_roi = int(self.A.shape[0] / 2)
-        # n2 = 2 * n_roi
-        
+        n_roi = int(self.A.shape[0] / self.Vars)
+
         obs = LinearFC()
         result =  obs.from_matrix(self.A, self.Qn)
         # FC_sim = result['FC']

@@ -274,7 +274,8 @@ class BoldModelFactory:
 
 
 class IntegratorFactory:
-    """Factory for creating integrators with appropriate noise configurations for different models."""
+    """Factory for creating integrators with appropriate manually-defined noise
+    configurations for different models."""
 
     _sigmas = {
         'Hopf': np.r_[1e-2, 1e-2],
