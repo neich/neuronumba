@@ -1,12 +1,18 @@
 """
 Source generators and `build_model` — the entry point that turns a `ModelSpec`
 into a numba-friendly `Model` subclass.
+
+Architecture: every name referenced in the dfun (parameters, helpers, etc.)
+resolves through ``model.<name>`` at the factory level. The factory takes a
+single argument — the model instance — and the inner dfun closes over the
+captured locals. There is no `m`/`P`/`m_aux` packing for DSL-built classes;
+parameters live as regular Python attributes on the instance.
 """
 from __future__ import annotations
 
 import ast
 import textwrap
-from typing import Any, Dict, List, Type
+from typing import Any, Dict, List, Tuple, Type
 
 import numba as nb
 import numpy as np
@@ -17,18 +23,24 @@ from neuronumba.simulator.models.model import Model, LinearCouplingModel
 
 from .dependents import _topo_sort_dependents
 from .materialize import _materialize_module
-from .rewriter import _DfunRewriter
+from .rewriter import ALLOWED_NP_FUNCS, _DfunRewriter
 from .spec import ModelSpec
 
 
-def _build_dfun_source(spec: ModelSpec) -> str:
-    """Return executable Python source for a function `dfun(state, coupling)`
-    that uses captured `m` and `P` variables (added by exec env)."""
+def _build_dfun_source(spec: ModelSpec) -> Tuple[str, List[str]]:
+    """Return ``(source, used_names)`` for the dfun factory of `spec`.
+
+    The source defines a ``make_<spec.name>_dfun(model)`` factory whose inner
+    function is the dfun. ``used_names`` is the sorted list of param + helper
+    names referenced by the equations; each gets a ``name = model.name``
+    binding at the factory level so the inner dfun captures it via closure.
+    """
 
     state_index = {sv.name: i for i, sv in enumerate(spec.state_vars)}
     coupling_index = {cv.name: i for i, cv in enumerate(spec.coupling_vars)}
     param_names = {p.name for p in spec.parameters}
     obs_names = set(spec.observables)
+    helper_names = {h.__name__ for h in spec.helpers}
 
     src = textwrap.dedent(spec.equations).strip()
     try:
@@ -39,7 +51,8 @@ def _build_dfun_source(spec: ModelSpec) -> str:
         ) from e
 
     rewriter = _DfunRewriter(
-        state_index, coupling_index, param_names, obs_names
+        state_index, coupling_index, param_names, obs_names,
+        helper_names=helper_names,
     )
     new_body = [rewriter.visit(stmt) for stmt in tree.body]
 
@@ -90,33 +103,35 @@ def _build_dfun_source(spec: ModelSpec) -> str:
 
     body_src = "\n".join(ast.unparse(stmt) for stmt in new_body)
 
-    # Header bindings: state vars from `state` array, params from `m`.
+    # State-var bindings live inside the inner dfun (read from `state`).
     state_binds = "\n".join(
         f"        {sv.name} = state[{i}, :]"
         for i, sv in enumerate(spec.state_vars)
         if sv.name in rewriter.used_state
     )
-    param_binds = "\n".join(
-        f"        {p} = m[np.intp(P.{p})]"
-        for p in sorted(rewriter.used_params)
+
+    # All parameters and helpers bind once at the factory level via
+    # `model.<name>`. Numba captures them as compile-time constants when the
+    # inner dfun is JIT'd. Helper functions (also model attributes since
+    # build_model stashes them on the class) come through the same path.
+    used_names = sorted(rewriter.used_params | rewriter.used_helpers)
+    factory_binds = "\n".join(
+        f"    {name} = model.{name}" for name in used_names
     )
 
     indented_body = textwrap.indent(body_src, "        ")
 
-    # Factory function: `m` and `P` are passed in and become real closure
-    # variables for the inner dfun — exactly the pattern the hand-written
-    # neuronumba models use.
-    parts = [f"def make_{spec.name}_dfun(m, P):"]
+    parts = [f"def make_{spec.name}_dfun(model):"]
+    if factory_binds:
+        parts.append(factory_binds)
     parts.append(f"    def {spec.name}_dfun(state, coupling):")
     if state_binds:
         parts.append(state_binds)
-    if param_binds:
-        parts.append(param_binds)
     parts.append(indented_body)
     parts.append(f"        return np.stack(({d_stack_args},)), {ret_obs}")
     parts.append(f"    return {spec.name}_dfun")
     fn_src = "\n".join(parts) + "\n"
-    return fn_src
+    return fn_src, used_names
 
 
 def _build_coupling_kernel(spec: ModelSpec):
@@ -148,16 +163,186 @@ def _build_coupling_kernel(spec: ModelSpec):
             return _diffusive_coupling
         return make_coupling
 
+    if kinds == {"delayed"}:
+        # `HistoryDelays.get_numba_sample` already computed
+        # g * sum_j W[i,j] * state[k, j, t-delay[i,j]] and returned shape
+        # (n_cvars, n_rois). The coupling step is therefore identity.
+        def make_coupling(self):
+            @nb.njit(nb.f8[:, :](nb.f8[:, :]), cache=NUMBA_CACHE)
+            def _delayed_coupling(state):
+                return state
+            return _delayed_coupling
+        return make_coupling
+
+    if "delayed" in kinds:
+        raise NotImplementedError(
+            f"Mixing 'delayed' coupling with other kinds ({sorted(kinds)}) is "
+            f"not supported in this version. Either make all coupling vars "
+            f"'delayed' or none."
+        )
+
     raise NotImplementedError(
-        f"Unsupported coupling kinds {sorted(kinds)}. The DSL ships 'linear' "
-        f"and 'diffusive'; subclass `Model` directly and override "
+        f"Unsupported coupling kinds {sorted(kinds)}. The DSL ships 'linear', "
+        f"'diffusive', and 'delayed'; subclass `Model` directly and override "
         f"`get_numba_coupling` for anything else."
     )
 
 
+# Names that the generated dfun source uses directly (function args, np
+# alias) and that helpers must therefore not shadow.
+_RESERVED_HELPER_NAMES = {"state", "coupling", "model", "np"}
+
+
+def _validate_helpers(spec: ModelSpec) -> None:
+    """Reject helper lists that would clash with other names in the dfun.
+
+    A helper conflicts with the dfun namespace if its `__name__` matches a
+    state var, coupling var, parameter, observable, whitelisted numpy
+    function, a reserved token, or any inherited `LinearCouplingModel`
+    method/attribute name (helpers are stashed as class attributes; a
+    collision would shadow the inherited member). Two helpers with the same
+    `__name__` are also a conflict.
+    """
+    if not spec.helpers:
+        return
+
+    seen: Dict[str, int] = {}
+    for i, h in enumerate(spec.helpers):
+        name = getattr(h, "__name__", None)
+        if not name:
+            raise ValueError(
+                f"helpers[{i}] has no __name__; pass a regular function, not "
+                f"a lambda or callable object."
+            )
+        if name in seen:
+            raise ValueError(
+                f"helpers[{i}] and helpers[{seen[name]}] both have "
+                f"__name__='{name}'; helper names must be unique."
+            )
+        seen[name] = i
+
+    # Names already on the base class (Model methods, HasAttr machinery).
+    # Stashing a helper with the same __name__ would shadow them and break
+    # the model contract.
+    base_attrs = {n for n in dir(LinearCouplingModel) if not n.startswith("__")}
+
+    forbidden = {
+        sv.name for sv in spec.state_vars
+    } | {
+        cv.name for cv in spec.coupling_vars
+    } | {
+        p.name for p in spec.parameters
+    } | set(spec.observables) | _RESERVED_HELPER_NAMES | ALLOWED_NP_FUNCS | base_attrs
+
+    clashes = set(seen) & forbidden
+    if clashes:
+        raise ValueError(
+            f"Helper name(s) {sorted(clashes)} clash with state vars, "
+            f"coupling vars, parameters, observables, reserved tokens, "
+            f"whitelisted numpy functions, or base-class methods. "
+            f"Rename the helpers."
+        )
+
+
+def _coupling_kernel_jacobian(g: float, W: np.ndarray, kind: str) -> np.ndarray:
+    """Closed-form Jacobian of one coupling kernel.
+
+    Returns ``C`` of shape ``(N, N)`` where
+    ``C[i, j] = d coupling[i] / d state_at_coupling_var[j]``.
+    """
+    if kind == "linear":
+        # coupling[i] = sum_j state[j] * g * W[i, j]
+        return g * W
+    if kind == "diffusive":
+        # coupling[i] = g * (sum_j state[j] * W[i, j] - ink[i] * state[i])
+        # ink[i] = sum_l W[l, i]  (col-sum of W; row-sum if W is symmetric)
+        ink = W.T.sum(axis=1)
+        return g * (W - np.diag(ink))
+    if kind == "delayed":
+        # The Jacobian of a delay-differential system isn't a single matrix
+        # — it's a delay-coupled spectrum. Linear stability for delayed
+        # systems needs different tooling (DDE-Biftool, Lambert-W methods).
+        raise NotImplementedError(
+            "get_jacobian is not supported for 'delayed' coupling kernels. "
+            "The Jacobian of a delay-differential system is not a single "
+            "matrix. Use a no-delay variant (replace 'delayed' with 'linear' "
+            "or 'diffusive') for linear stability analysis, or analyse the "
+            "system with DDE-aware tooling."
+        )
+    raise NotImplementedError(
+        f"Jacobian not implemented for coupling kind '{kind}'. "
+        f"Subclass and override `get_jacobian` for custom kernels."
+    )
+
+
+def _compute_jacobian(model, state, eps: float = 1e-6) -> np.ndarray:
+    """Two-piece numerical Jacobian: local FD + closed-form coupling assembly.
+
+    Used as the body of `get_jacobian` on every DSL-built class. See the
+    docstring on the class method for shape and indexing conventions.
+    """
+    state = np.asarray(state, dtype=np.float64)
+    nsv = model.n_state_vars
+    N = model.n_rois
+    if state.shape != (nsv, N):
+        raise ValueError(
+            f"state must have shape ({nsv}, {N}); got {state.shape}"
+        )
+
+    c_vars = list(model.c_vars)
+    ncv = len(c_vars)
+
+    # Get the current dfun + coupling closures (capture current params).
+    dfun = model.get_numba_dfun()
+    coupling_factory = model.get_numba_coupling()
+    coupling = coupling_factory(state[c_vars, :].copy())  # shape (ncv, N)
+
+    # 1) Local partials: dD_u/d(state_v) at each region.
+    #    The dfun is per-region pointwise (no cross-region dependence),
+    #    so perturbing the entire row of state_v gives the per-region
+    #    derivative with no cross-talk.
+    local = np.empty((nsv, nsv, N))
+    for v in range(nsv):
+        s_plus = state.copy(); s_plus[v] += eps
+        s_minus = state.copy(); s_minus[v] -= eps
+        out_plus, _ = dfun(s_plus, coupling.copy())
+        out_minus, _ = dfun(s_minus, coupling.copy())
+        local[:, v, :] = (out_plus - out_minus) / (2.0 * eps)
+
+    # 2) Coupling partials: dD_u/d(coupling_k) at each region.
+    coup = np.empty((nsv, ncv, N))
+    for k in range(ncv):
+        c_plus = coupling.copy(); c_plus[k] += eps
+        c_minus = coupling.copy(); c_minus[k] -= eps
+        out_plus, _ = dfun(state.copy(), c_plus)
+        out_minus, _ = dfun(state.copy(), c_minus)
+        coup[:, k, :] = (out_plus - out_minus) / (2.0 * eps)
+
+    # 3) Closed-form coupling-kernel Jacobians, one (N, N) matrix per cv.
+    coupling_jacobians = [
+        _coupling_kernel_jacobian(model.g, model.weights, kind)
+        for kind in model._coupling_var_kinds
+    ]
+
+    # 4) Assemble the network Jacobian:
+    #    J[u*N + i, v*N + j] = local[u, v, i] * delta_ij
+    #                        + sum_k (v == c_vars[k]) * coup[u, k, i] * C_k[i, j]
+    J = np.zeros((nsv * N, nsv * N))
+    for u in range(nsv):
+        for v in range(nsv):
+            J[u * N:(u + 1) * N, v * N:(v + 1) * N] = np.diag(local[u, v, :])
+    for k in range(ncv):
+        v = c_vars[k]
+        C_k = coupling_jacobians[k]
+        for u in range(nsv):
+            J[u * N:(u + 1) * N, v * N:(v + 1) * N] += coup[u, k, :, None] * C_k
+
+    return J
+
+
 def build_model(spec: ModelSpec) -> Type[Model]:
-    """Compile a ModelSpec into a `Model` subclass equivalent to a hand-written
-    neuronumba model. The returned class has the same external contract."""
+    """Compile a ModelSpec into a `Model` subclass with the same external
+    contract as a hand-written neuronumba model."""
 
     # Validate that coupling vars are state vars.
     state_names = [sv.name for sv in spec.state_vars]
@@ -167,9 +352,12 @@ def build_model(spec: ModelSpec) -> Type[Model]:
                 f"Coupling var '{cv.name}' is not declared as a state var."
             )
 
-    # Build the dfun source. We embed it into a complete module that imports
-    # numpy (so numba can later compile from a real file path).
-    dfun_body_src = _build_dfun_source(spec)
+    # Validate helpers up-front.
+    _validate_helpers(spec)
+
+    # Build the dfun source. Embed in a module that imports numpy so numba
+    # can compile from a real file path.
+    dfun_body_src, _used_names = _build_dfun_source(spec)
     full_src = (
         "# Auto-generated by nndsl. Do not edit.\n"
         "import numpy as np\n"
@@ -185,81 +373,47 @@ def build_model(spec: ModelSpec) -> Type[Model]:
     # Class-level model-info attributes.
     cls_dict["_state_var_names"] = [sv.name for sv in spec.state_vars]
     cls_dict["_coupling_var_names"] = [cv.name for cv in spec.coupling_vars]
+    cls_dict["_coupling_var_kinds"] = [cv.kind for cv in spec.coupling_vars]
     cls_dict["_observable_var_names"] = list(spec.observables)
     bounds = {sv.name: sv.bounds for sv in spec.state_vars if sv.bounds is not None}
     if bounds:
         cls_dict["_state_var_bounds"] = bounds
 
-    # Parameter Attrs. Independent params get `default`; dependents get
-    # `dependant=True` so neuronumba's existing machinery treats them like
-    # regional params that the model itself fills in during `_init_dependant`.
+    # Parameter Attrs. No `attributes=Tag.REGIONAL` — DSL params do not flow
+    # through the inherited `_init_dependant_automatic` packing path
+    # (see the no-op override below). The Attr is purely for default-setting
+    # and `__init__` kwarg validation.
     independent_params = [p for p in spec.parameters if not p.is_dependent]
     dependent_params = [p for p in spec.parameters if p.is_dependent]
     for p in independent_params:
-        attr_kwargs: Dict[str, Any] = {
-            "default": p.default,
-            "doc": p.doc,
-        }
+        attr_kwargs: Dict[str, Any] = {"default": p.default, "doc": p.doc}
         if p.required:
             attr_kwargs["required"] = True
-        attr_kwargs["attributes"] = (
-            Model.Tag.REGIONAL if p.regional else Model.Tag.GLOBAL
-        )
         cls_dict[p.name] = Attr(**attr_kwargs)
     for p in dependent_params:
-        # `dependant=True` tells HasAttr/Model to skip default-setting and
-        # required-checking; we'll fill these in during _init_dependant.
-        cls_dict[p.name] = Attr(
-            dependant=True,
-            doc=p.doc,
-            attributes=(Model.Tag.REGIONAL if p.regional else Model.Tag.GLOBAL),
-        )
+        # `dependant=True` skips default-setting and tells HasAttr to refuse
+        # the param as an __init__ kwarg. We populate it in _init_dependant.
+        cls_dict[p.name] = Attr(dependant=True, doc=p.doc)
 
-    # Topo-sort dependents once at build time and compile each formula.
+    # Stash helpers as class attributes so the factory can resolve them
+    # via `model.<name>`. They're shared across all instances.
+    for helper in spec.helpers:
+        cls_dict[helper.__name__] = helper
+
+    # Override the inherited m/m_aux packing to a no-op. DSL parameters live
+    # as plain instance attributes; the dfun captures them via closure.
+    def _init_dependant_automatic(self):
+        pass
+    cls_dict["_init_dependant_automatic"] = _init_dependant_automatic
+
+    # Topo-sort dependents once at build time and pre-compile each formula.
     sorted_deps = _topo_sort_dependents(spec)
     compiled_formulas = [
         (p.name, compile(p.formula, f"<formula:{spec.name}.{p.name}>", "eval"))
         for p in sorted_deps
     ]
 
-    # _init_dependant: evaluate formulas in order, on the instance. Runs at
-    # configure() time, i.e. on construction and any subsequent configure() call,
-    # which is the existing protocol for "parameter was modified" in neuronumba.
-    #
-    # Mutable container that will hold the generated class once `type()` returns
-    # it below. Captured by the closure so `super()` always resolves against the
-    # DSL-generated class, not against `type(self)`. Without this indirection,
-    # subclassing the generated class would re-enter this method via super()
-    # forever (because `type(self)` would be the user's subclass).
-    _class_cell: List[Type[Model]] = [None]
-
-    def _init_dependant(self):
-        # Run the base-class hook first (sets n_rois, weights_t for
-        # LinearCouplingModel, etc.). Without this, `self.weights` exists but
-        # things like `self.weights_t` don't yet.
-        super(_class_cell[0], self)._init_dependant()
-        # Evaluation env: numpy + every parameter currently on self (independent
-        # ones from the user, plus dependents already computed earlier in the
-        # topo order).
-        env: Dict[str, Any] = {"np": np}
-        # Snapshot all params that exist so far.
-        for p in spec.parameters:
-            val = getattr(self, p.name, None)
-            if val is not None:
-                env[p.name] = val
-        for name, code_obj in compiled_formulas:
-            try:
-                value = eval(code_obj, env)
-            except Exception as e:
-                raise RuntimeError(
-                    f"Error evaluating dependent parameter '{name}' in model "
-                    f"'{spec.name}': {e}"
-                ) from e
-            setattr(self, name, value)
-            env[name] = value
-    cls_dict["_init_dependant"] = _init_dependant
-
-    # `g` is pulled in by LinearCouplingModel; we don't redeclare it.
+    on_configure_cb = spec.on_configure
 
     initial_overrides = dict(spec.initial_state_overrides)
     state_initials = [sv.initial for sv in spec.state_vars]
@@ -274,15 +428,13 @@ def build_model(spec: ModelSpec) -> Type[Model]:
         return out
     cls_dict["initial_state"] = initial_state
 
-    # Capture spec metadata in the closure for error reporting.
+    # Capture spec metadata for error reporting.
     _spec_name = spec.name
     _spec_equations = spec.equations
     _source_file = gen_module.__file__
 
     def get_numba_dfun(self):
-        m_local = self.m.copy()
-        P_local = self.P
-        py_dfun = factory(m_local, P_local)
+        py_dfun = factory(self)
         try:
             jitted = nb.njit(
                 nb.types.UniTuple(nb.f8[:, :], 2)(nb.f8[:, :], nb.f8[:, :]),
@@ -301,10 +453,28 @@ def build_model(spec: ModelSpec) -> Type[Model]:
     coupling_factory = _build_coupling_kernel(spec)
     cls_dict["get_numba_coupling"] = coupling_factory
 
-    # Choose base class. LinearCouplingModel only adds `g` + `weights_t`. We
-    # always inherit from it: even diffusive Hopf needs `g` and `weights_t`,
-    # and for 'linear' it gives us the default coupling (which we override
-    # only when we want — but we override always for clarity here).
+    def get_jacobian(self, state, eps: float = 1e-6) -> np.ndarray:
+        """Network Jacobian d(d_state)/d(state) at the operating point ``state``.
+
+        Computed via centered finite differences on the dfun, combined with
+        the closed-form linearization of the coupling kernel (which the DSL
+        already knows from each `CouplingVar.kind`).
+
+        Args:
+            state: shape ``(n_state_vars, n_rois)`` operating point.
+            eps: finite-difference step. Default ``1e-6`` gives roughly
+                ``1e-10`` accuracy with centered differences.
+
+        Returns:
+            Jacobian of shape ``(n_state_vars * n_rois, n_state_vars * n_rois)``.
+            Indexing follows the convention ``J[u*N + i, v*N + j] = d(dfun_u
+            at region i)/d(state_v at region j)``.
+        """
+        return _compute_jacobian(self, state, eps)
+    cls_dict["get_jacobian"] = get_jacobian
+
+    # Inherit from LinearCouplingModel: we get `g`, `weights_t`, the base
+    # `_init_dependant` (sets weights_t/n_rois), and `get_numba_validate`.
     base = LinearCouplingModel
 
     cls_dict["__doc__"] = (
@@ -318,13 +488,54 @@ def build_model(spec: ModelSpec) -> Type[Model]:
 
     cls = type(spec.name, (base,), cls_dict)
     cls.__nndsl_source_file__ = gen_module.__file__
-    _class_cell[0] = cls
+
+    # Define `_init_dependant` AFTER class creation so the closure captures
+    # the real `cls` directly (no `_class_cell[0]` indirection). Defines
+    # super() resolution to walk past `cls` regardless of the runtime type
+    # of `self` — crucial when users subclass the DSL-generated class.
+    def _init_dependant(self):
+        super(cls, self)._init_dependant()
+        # Evaluation env: numpy + model-context attrs + every parameter
+        # currently on self (independents from the user, dependents already
+        # computed earlier in the topo order).
+        env: Dict[str, Any] = {"np": np}
+        for ctx_name in ("weights", "weights_t", "g", "n_rois"):
+            val = getattr(self, ctx_name, None)
+            if val is not None:
+                env[ctx_name] = val
+        for p in spec.parameters:
+            val = getattr(self, p.name, None)
+            if val is not None:
+                env[p.name] = val
+        for name, code_obj in compiled_formulas:
+            try:
+                value = eval(code_obj, env)
+            except Exception as e:
+                raise RuntimeError(
+                    f"Error evaluating dependent parameter '{name}' in model "
+                    f"'{spec.name}': {e}"
+                ) from e
+            # Contiguify any 2D-or-higher array result so the dfun's
+            # closure capture sees C-contiguous memory (numba prefers it).
+            if isinstance(value, np.ndarray) and value.ndim >= 2:
+                value = np.ascontiguousarray(value)
+            setattr(self, name, value)
+            env[name] = value
+        # User imperative hook runs last — sees fully-evaluated dependents,
+        # can freely mutate self. Mutations are visible to the dfun the next
+        # time `get_numba_dfun()` is called (factory reads `model.<name>`
+        # fresh at that point).
+        if on_configure_cb is not None:
+            on_configure_cb(self)
+    cls._init_dependant = _init_dependant
+
     return cls
 
 
 def dump_generated(spec: ModelSpec) -> str:
     """Return the generated dfun source for inspection."""
-    return _build_dfun_source(spec)
+    src, _ = _build_dfun_source(spec)
+    return src
 
 
 def get_source_file(cls: Type[Model]) -> str:
