@@ -10,6 +10,7 @@ hand-written counterpart in `src/neuronumba/simulator/models/`.
 | [deco2014_dsl.py](deco2014_dsl.py) | `deco2014.py` | 67 vs 416 |
 | [naskar2021_dsl.py](naskar2021_dsl.py) | `naskar2021.py` | 69 vs 104 |
 | [montbrio_dsl.py](montbrio_dsl.py) | `montbrio.py` | 88 vs 160 |
+| [zerlaut_dsl.py](zerlaut_dsl.py) (1st + 2nd order) | `zerlaut.py` | ~320 vs 800 |
 
 There is also [compare_simulations.py](compare_simulations.py): a runnable
 script that simulates pairs of DSL and hand-written models on the same inputs
@@ -35,16 +36,24 @@ If you change a DSL spec (e.g. for a new feature you want to add), the
 equivalence test still has to pass against the hand-written reference. If they
 genuinely diverge, that's a model change and belongs in a separate PR.
 
-## Models not yet ported
+## DSL feature coverage
 
-- **Zerlaut** (`zerlaut.py`, ~800 LOC) — uses several `@njit` helper subroutines
-  (`get_fluct_regime_vars`, `threshold_func`, `erfc_approx`). The DSL now
-  supports user-supplied helpers via `helpers=[...]`, so a port is feasible;
-  it just hasn't been written yet.
+All neuronumba models in `src/neuronumba/simulator/models/` are now expressed
+in the DSL. The Zerlaut port additionally exercised:
+
+- Tuple-unpacking from a multi-return helper (`mu_V, sigma_V, T_V =
+  get_fluct_regime_vars(...)`).
+- Long argument lists (TF takes 21 positional arguments — the DSL just
+  transcribes them; numba treats this exactly the same as the hand-written
+  code).
+- Helpers that compose other helpers (`TF` calls `get_fluct_regime_vars`
+  and `threshold_func` and `erfc_approx`).
+- 1D-array parameters as defaults (`P_e`, `P_i` are length-10 polynomial
+  coefficients).
 
 The DSL can also express models with non-scalar matrix parameters and
 conduction-delay coupling — see `tests/test_dsl_matrix_params.py` and
-`tests/test_dsl_delayed.py` for the relevant patterns.
+`tests/test_dsl_delayed.py`.
 
 ## Usage
 
