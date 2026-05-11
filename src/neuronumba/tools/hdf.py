@@ -8,6 +8,8 @@ def loadmat(filename):
         f = h5py.File(filename, 'r')
         r = {}
         for k, ds in f.items():
+            if type(ds) is h5py._hl.group.Group:
+                continue
             if len(ds.shape) == 0:
                 r[k] = ds[()]
             else:
