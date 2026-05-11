@@ -24,8 +24,6 @@ class HFreq(Observable):
             raise TypeError(f'Parameter "tr" must be float, got {type(self.tr).__name__}')
         if not isinstance(self.group_fmri, (np.ndarray, dict)):
             raise TypeError(f'Parameter "group_fmri" must be either np.ndarray or dict, got {type(self.group_fmri).__name__}')
-        if not isinstance(self.filterps_version, filterps.FiltPowSpetraVersion):
-            raise TypeError(f'Parameter "filterps_version" must be FilterPowSpetraVersion, got {type(self.filterps_version).__name__}')
 
         f_diff = filterps.filt_pow_spetra_multiple_subjects(self.group_fmri, self.tr, self.filterps_version)
         return 2 * np.pi * f_diff  # omega
