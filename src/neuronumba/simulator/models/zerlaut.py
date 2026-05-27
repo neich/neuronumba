@@ -459,6 +459,9 @@ class ZerlautAdaptationFirstOrder(LinearCouplingModel):
 
         return ZerlautAdaptationFirstOrder_dfun
 
+    def get_noise_template(self):
+        #           ['E', 'I', 'W_e', 'W_i', 'ou_drift']
+        return np.r_[0.0, 0.0,   0.0,   0.0,        1.0]
 
 
 class ZerlautAdaptationSecondOrder(ZerlautAdaptationFirstOrder):
@@ -804,3 +807,7 @@ class ZerlautAdaptationSecondOrder(ZerlautAdaptationFirstOrder):
             return np.stack((dE, dI, dCee, dCei, dCii, dWe, dWi, dou)), np.empty((1, 1))
 
         return ZerlautAdaptationSecondOrder_dfun
+
+    def get_noise_template(self):
+        #           ['E', 'I', 'C_ee', 'Cei', 'C_ii', 'W_e', 'W_i', 'ou_drift']
+        return np.r_[0.0, 0.0,    0.0,   0.0,    0.0,   0.0,   0.0,        1.0]
