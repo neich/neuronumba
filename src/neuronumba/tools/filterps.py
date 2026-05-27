@@ -7,10 +7,9 @@
 # #--------------------------------------------------------------------------
 import numpy as np
 from scipy import stats
-from enum import Enum
 from typing import Union
 
-class FiltPowSpetraVersion(Enum):
+class FiltPowSpetraVersion:
     v2021 = "v2021" # This is now the default one (from Irene's code)
     v2015 = "v2015" # This was the original version implemented (from Victor Saenger code)
 
@@ -118,7 +117,7 @@ def filt_pow_spetra_multiple_subjects(
     Ts = tmax * (tr / 1000.0)
     freqs = np.arange(0, tmax / 2 - 1) / Ts
 
-    if version == FiltPowSpetraVersion.v2021:
+    if version is FiltPowSpetraVersion.v2021:
         PowSpect_filt_narrow = np.zeros((n_subjects, int(np.floor(tmax / 2)), n_nodes))
         f_diff_sub = np.zeros((n_subjects, n_nodes))
 
@@ -129,15 +128,17 @@ def filt_pow_spetra_multiple_subjects(
                 pow_areas.append(gaussfilt(freqs, PowSpect_filt_narrow[s][:, node], 0.005))
             pow_areas = np.array(pow_areas)
             max_idx = np.argmax(pow_areas, axis=1)
+            if s == 376:
+                print(f'max_idx for subj {s}')
             f_diff_sub[s] = freqs[max_idx]
         
         f_diff = np.mean(f_diff_sub, axis=0)
         return f_diff
     
-    elif version == FiltPowSpetraVersion.v2015:
+    elif version is FiltPowSpetraVersion.v2015:
         PowSpect_filt_narrow = np.zeros((n_subjects, int(np.floor(tmax / 2)), n_nodes))
         for s in range(n_subjects):
-            PowSpect_filt_narrow[s] = filt_pow_spetra(signal[s, :, :], tr, version)
+            PowSpect_filt_narrow[s] = filt_pow_spetra(signal_array[s, :, :], tr, version)
         Power_Areas_filt_narrow_unsmoothed = np.mean(PowSpect_filt_narrow, axis=0)  # (freqs, regions)
 
         Power_Areas_filt_narrow_smoothed = np.zeros_like(Power_Areas_filt_narrow_unsmoothed)
