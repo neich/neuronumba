@@ -6,7 +6,7 @@ from neuronumba.basic.attr import Attr, HasAttr
 from neuronumba.numba_tools import address_as_void_pointer, addr
 from neuronumba.numba_tools.types import NDA_f8_2d, NDA_f8_1d
 from neuronumba.simulator.connectivity import Connectivity
-from neuronumba.simulator.history import HistoryNoDelays
+from neuronumba.simulator.history import HistoryDelays, HistoryNoDelays
 from neuronumba.simulator.integrators import EulerStochastic
 from neuronumba.simulator.monitors import RawSubSample, TemporalAverage
 from neuronumba.numba_tools.config import NUMBA_CACHE, NUMBA_FASTMATH, NUMBA_NOGIL
@@ -34,7 +34,21 @@ class Simulator(HasAttr):
         self.integrator.configure()
         self.connectivity.configure()
         self.model.configure(weights=self.connectivity.weights)
-        self.history.configure(c_vars=self.model.c_vars, weights=self.connectivity.weights)
+        if isinstance(self.history, HistoryDelays):
+            # Delays in seconds; the history converts to integer step indices
+            # using the integrator's dt.
+            delays = self.connectivity.lengths / self.connectivity.speed
+            self.history.configure(
+                c_vars=self.model.c_vars,
+                weights=self.connectivity.weights,
+                g=getattr(self.model, "g", 1.0),
+                delays=delays,
+                dt=self.integrator.dt,
+            )
+        else:
+            self.history.configure(
+                c_vars=self.model.c_vars, weights=self.connectivity.weights
+            )
 
         dt = self.integrator.dt
         t_max = t_end - t_start

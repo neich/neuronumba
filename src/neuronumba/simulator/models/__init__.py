@@ -4,3 +4,4 @@ from neuronumba.simulator.models.deco2014 import Deco2014
 from neuronumba.simulator.models.hopf import Hopf
 from neuronumba.simulator.models.montbrio import Montbrio
 from neuronumba.simulator.models.zerlaut import ZerlautAdaptationFirstOrder, ZerlautAdaptationSecondOrder
+from neuronumba.simulator.models import dsl  # noqa: F401

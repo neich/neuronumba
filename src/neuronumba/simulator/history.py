@@ -20,10 +20,23 @@ class History(HasAttr):
         self.n_rois = self.weights.shape[0]
 
 
-class HistoryDense(History):
+class HistoryDelays(History):
+    """Ring-buffer history with per-(target, source) conduction delays.
 
-    # Global linear coupling
-    g = Attr(default=None, required=True)
+    Contract — for compatibility with the simulator's m_couple step:
+
+      `get_numba_sample(step)` returns a (n_cvars, n_rois) array where
+      entry [k, i] = g * sum_j W[i, j] * buffer[k, t_idx[i, j], j],
+      with t_idx[i, j] = (step - 1 - i_delays[i, j]) mod n_time.
+
+    The per-pair time index is the only thing that distinguishes this from
+    the no-delay path; the (n_cvars, n_rois) output shape lets the existing
+    DSL `linear` coupling kernel run as an identity passthrough on top.
+    """
+
+    g = Attr(default=1.0, required=False)
+    # Delay matrix in seconds: delays[i, j] is the time it takes for a
+    # signal from region j to arrive at region i.
     delays = Attr(default=None, required=True)
     dt = Attr(required=True)
 
@@ -32,51 +45,56 @@ class HistoryDense(History):
     n_time = Attr(dependant=True)
 
     def _init_dependant(self):
+        super()._init_dependant()
         self.i_delays = np.rint(self.delays / self.dt).astype(np.int32)
-        self.n_time = np.max(self.i_delays) + 1
-        self.buffer = np.zeros((len(self.c_vars), self.n_time, self.n_rois))
+        # +1 because step indices count from 1; we always need at least one
+        # past slot even when all delays round to zero.
+        self.n_time = int(np.max(self.i_delays)) + 1
+        # Buffer shape: (n_cvars, n_time, n_rois). Initialized to zero —
+        # early steps before the buffer fills get implicit zero coupling
+        # from far-delay regions, which matches the convention.
+        self.buffer = np.zeros(
+            (self.n_cvars, self.n_time, self.n_rois), dtype=np.float64
+        )
 
     def get_numba_update(self):
-        # buffer = self.buffer
         n_cvars = self.n_cvars
+        n_time = self.n_time
         c_vars = self.c_vars
-        # addr = buffer.ctypes.data
         b_addr, b_shape, b_dtype = addr.get_addr(self.buffer)
 
-        @nb.njit((nb.void)(nb.int, nb.f8[:,:]), cache=NUMBA_CACHE)
-        def c_update(step: nb.int, state: NDA_f8_2d):
-            # data = nb.carray(addr.address_as_void_pointer(addr), buffer.shape,
-            #                  dtype=buffer.dtype)
-            data = addr.create_carray(b_addr, b_shape, b_dtype)
-            for i in range(n_cvars):
-                data[i, step % self.n_time, :] = state[c_vars[i], :]
+        @nb.njit(nb.void(nb.i8, nb.f8[:, :]), cache=NUMBA_CACHE)
+        def c_update(step, state):
+            buf = addr.create_carray(b_addr, b_shape, b_dtype)
+            slot = step % n_time
+            for k in range(n_cvars):
+                buf[k, slot, :] = state[c_vars[k], :]
 
         return c_update
 
     def get_numba_sample(self):
-        buffer = self.buffer
+        n_cvars = self.n_cvars
+        n_rois = self.n_rois
         n_time = self.n_time
         weights = self.weights
         i_delays = self.i_delays
-        c_vars = self.c_vars
-        n_cvars = self.n_cvars
-        n_rois = self.n_rois
         g = self.g
+        b_addr, b_shape, b_dtype = addr.get_addr(self.buffer)
 
-        @nb.njit((nb.f8[:,:])(nb.int), cache=NUMBA_CACHE)
+        @nb.njit(nb.f8[:, :](nb.i8), cache=NUMBA_CACHE)
         def h_sample(step):
-            time_idx = (step - 1 - i_delays + n_time) % n_time
-            result = np.empty((n_cvars, n_rois))
-            for v in c_vars:
-                delayed_state = np.empty((n_rois, n_rois))
+            buf = addr.create_carray(b_addr, b_shape, b_dtype)
+            result = np.empty((n_cvars, n_rois), dtype=np.float64)
+            for k in range(n_cvars):
                 for i in range(n_rois):
-                    delayed_state[i] = buffer[v, time_idx[i], i]
-                result[v] = np.sum(weights * delayed_state, axis=0)
-            return g * result
+                    s = 0.0
+                    for j in range(n_rois):
+                        t_idx = (step - 1 - i_delays[i, j] + n_time) % n_time
+                        s += weights[i, j] * buf[k, t_idx, j]
+                    result[k, i] = g * s
+            return result
 
         return h_sample
-
-
 
 
 class HistoryNoDelays(History):
