@@ -37,7 +37,7 @@ class Information_transfer(Turbulence):
 
     def _compute_from_fmri(self, bold_signal):
         # bold_signal (ndarray): Bold signal with shape (n_rois, n_time_samples)
-        cc = self.compute_information_transfer(bold_signal.T)
+        cc = self.compute_information_transfer(bold_signal)
         return cc
 
     def compute_information_transfer(self, bold_signal):
@@ -128,7 +128,17 @@ class Information_cascade(ObservableFMRI):
     """
 
     lambda_values = Attr(default=[0.18], required=False)
-    cog_dist = Attr(required=True)
+    cog_dist      = Attr(default=None, required=False)
+    rr            = Attr(default=None, required=False)
+    use_absolute_correlation = Attr(default=True, required=False)
+    """
+    If True, information cascade flow is computed from the magnitude of
+    significant cross-scale correlations, reproducing the historical
+    Neuronumba implementation.
+    If False, signed significant correlations are averaged directly,
+    reproducing the original MATLAB implementation used in
+    Deco et al. (2021).
+    """
     # ============ the Information Cascade objects for each lambda
     turbus = None
 
@@ -140,7 +150,8 @@ class Information_cascade(ObservableFMRI):
         for lambda_v in self.lambda_values:
             print(f"    Information Transfer flow for lambda = {lambda_v}")
             # Define and call the turbulence object
-            Turbu = Information_transfer(cog_dist=self.cog_dist, lambda_val=lambda_v, ignore_nans=True)
+            Turbu = Information_transfer(cog_dist=self.cog_dist, rr=self.rr,
+                                         lambda_val=lambda_v, ignore_nans=True)
             Turbu.configure()
             self.turbus[lambda_v] = Turbu
 
@@ -148,6 +159,12 @@ class Information_cascade(ObservableFMRI):
         # bold_signal (ndarray): Bold signal with shape (n_rois, n_time_samples)
         cc = self.compute_information_cascade(bold_signal)
         return cc
+
+    def _aggregate_significant_correlations(self, cc, pp):
+        values = cc[pp < 0.05]
+        if self.use_absolute_correlation:
+            values = np.abs(values)
+        return np.nanmean(values)
 
     def compute_information_cascade(self, bold_signal):
         turbuRes = {}
@@ -163,7 +180,10 @@ class Information_cascade(ObservableFMRI):
             lambda_v_next = self.lambda_values[lambda_pos+1]
             cc, pp = matlab_tricks.corr_p(np.squeeze(enstropys[lambda_v_next][:, 1:]).T,
                                           np.squeeze(enstropys[lambda_v][:, :-1]).T)
-            TransferLambda[lambda_pos+1] = np.nanmean(np.abs(cc[pp < 0.05]))  # info flow
+            # TransferLambda[lambda_pos+1] = np.nanmean(np.abs(cc[pp < 0.05]))  # info flow
+            TransferLambda[lambda_pos + 1] = \
+                self._aggregate_significant_correlations(cc, pp)
+
         InformationCascade = np.nanmean(TransferLambda[1:len_lambdas],axis=0)  # info cascade
         turbus = {f'{attrib}-{lambda_v}': turbuRes[lambda_v][attrib]
                   for attrib in turbuRes[lambda_v] for lambda_v in self.lambda_values}  # This is done to ease serialization...
