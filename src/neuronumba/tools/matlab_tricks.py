@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from scipy.special import erfcinv, betainc
 from scipy.stats import pearsonr
+from statsmodels.tsa.stattools import acf
 import control
 
 # Matlab's corr2 function. Code taken from
@@ -49,23 +50,28 @@ def corr_p(A,B):
     return dfcoeff, dfpvals
 
 
-# Matlab's autocorr function. From
-# https://stackoverflow.com/questions/61624985/python-use-of-corrcoeff-to-achieve-matlabs-corr-function
+# Matlab's autocorr function.
 def autocorr(x, lags):
-    autocorrs = np.ones(lags+1)  # just to initialize autocorr[0] = 1 ;-)
-    for lag in range(1, lags+1):
-        series = x[lag:]
-        series_auto = x[:-lag]
-        corr = 0
-        var_x1 = 0
-        var_x2 = 0
-        for j in range(len(series)):
-            x1 = series[j] - np.average(series)
-            x2 = series_auto[j] - np.average(series_auto)
-            corr += x1*x2
-            var_x1  += x1**2
-            var_x2 += x2**2
-        autocorrs[lag] = corr/((var_x1*var_x2) ** 0.5)
+    # From
+    # https://stackoverflow.com/questions/61624985/python-use-of-corrcoeff-to-achieve-matlabs-corr-function
+    # autocorrs = np.ones(lags+1)  # just to initialize autocorr[0] = 1 ;-)
+    # for lag in range(1, lags+1):
+    #     series = x[lag:]
+    #     series_auto = x[:-lag]
+    #     corr = 0
+    #     var_x1 = 0
+    #     var_x2 = 0
+    #     for j in range(len(series)):
+    #         x1 = series[j] - np.average(series)
+    #         x2 = series_auto[j] - np.average(series_auto)
+    #         corr += x1*x2
+    #         var_x1  += x1**2
+    #         var_x2 += x2**2
+    #     autocorrs[lag] = corr/((var_x1*var_x2) ** 0.5)
+
+    # 2nd solution, From
+    # https://stackoverflow.com/questions/14297012/estimate-autocorrelation-using-python
+    autocorrs = acf(x, nlags=lags)
     return autocorrs
 
 
