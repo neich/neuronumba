@@ -8,9 +8,8 @@ import numpy as np
 
 from neuronumba.tools.filters import BandPassFilter
 from neuronumba.observables import FC, HFreq
-from neuronumba.fitting.gec import FitGEC, Linear_COV_corr_sim, NonLinear_COV_corr_sim
+from tools.connectivity_generators.gec import FitGEC, Linear_COV_corr_sim, NonLinear_COV_corr_sim
 from neuronumba.simulator.models import Hopf
-from neuronumba.observables.linear.linearfc import LinearFC
 from neuronumba.tools.loader import load_2d_matrix
 
 if __name__ == '__main__':
