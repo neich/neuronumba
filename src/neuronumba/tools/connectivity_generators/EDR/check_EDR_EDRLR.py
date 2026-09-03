@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 
 import DataLoaders.WorkBrainFolder as WB
 import DataLoaders.HCP_Schaefer2018 as HCP
-from fitting.EDR.exponential_distance_rule import EDR_distance_rule, EDR_LR_distance_rule
+from tools.connectivity_generators.EDR.exponential_distance_rule import EDR_distance_rule, EDR_LR_distance_rule
 
 
 # ---------------------------------------------------------------------------

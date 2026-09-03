@@ -31,26 +31,32 @@ class Turbulence(ObservableFMRI):
     """
 
     lambda_val    = Attr(default=0.18, required=False)
-    cog_dist      = Attr(required=True)
+    cog_dist      = Attr(default=None, required=False)
     # Dependant outputs populated by _init_dependant
     c_exp         = Attr(dependant=True)
-    rr            = Attr(dependant=True)
+    rr            = Attr(default=None, required=False)
 
     def _init_dependant(self):
         super()._init_dependant()
+        if self.rr is None:
+            self._compute_rr()
         self._compute_exp_law()
 
-    def _compute_exp_law(self):
+    def _compute_rr(self):
+        if self.cog_dist is None:
+            raise Exception('CoG distribution not available')
         N = self.cog_dist.shape[0]
         # Compute the distance matrix
         rr = np.zeros((N, N))
         for i in range(N):
             for j in range(N):
                 rr[i, j] = np.linalg.norm(self.cog_dist[i, :] - self.cog_dist[j, :])
-        # Build the exponential-distance matrix
-        c_exp = np.exp(-self.lambda_val * rr)
-        np.fill_diagonal(c_exp, 1)
         self.rr = rr
+
+    def _compute_exp_law(self):
+        # Build the exponential-distance matrix
+        c_exp = np.exp(-self.lambda_val * self.rr)
+        np.fill_diagonal(c_exp, 1)
         self.c_exp = c_exp
 
     def _compute_from_fmri(self, bold_signal):
@@ -118,7 +124,7 @@ class Turbulence(ObservableFMRI):
             'R_time': R_time,          # Amplitude turbulence across timepoints per node
             'acf_spa': acf_spa,        # Autocorrelation of R across space
             'acf_time': acf_time,      # Autocorrelation of R across time
-            'entrophy': enstrophy,     # Kuramoto local order parameter
+            'enstrophy': enstrophy,    # Kuramoto local order parameter
             'gKoP': gKoP,              # Global Kuramoto parameter (synchronization)
             'Meta': Meta               # Global metastability
         }
